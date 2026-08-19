@@ -1,0 +1,70 @@
+name: Fare Hunter
+
+# Runs from GitHub's own runners, which have unrestricted internet — so
+# the provider APIs (Duffel etc.) are reachable with no allowlist to set.
+# Your DUFFEL_TOKEN lives in the repo's encrypted Actions secrets, never
+# in code or chat.
+on:
+  workflow_dispatch:          # the "Run workflow" button (manual)
+  schedule:
+    - cron: '19 */4 * * *'    # every 4 hours — only fires from the default branch
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Carry price history between runs so drops, 30-day charts and
+      # baselines build up over time instead of resetting each run.
+      - name: Restore price history
+        uses: actions/cache@v4
+        with:
+          path: hunter.db
+          key: fare-hunter-db-${{ github.run_id }}
+          restore-keys: |
+            fare-hunter-db-
+
+      - name: Scan and report
+        env:
+          DUFFEL_TOKEN: ${{ secrets.DUFFEL_TOKEN }}
+          AMADEUS_KEY: ${{ secrets.AMADEUS_KEY }}
+          AMADEUS_SECRET: ${{ secrets.AMADEUS_SECRET }}
+          KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
+        run: |
+          # --- watches (idempotent; add lines here to track more flights) ---
+          python hunt.py flight riyadh-lisbon \
+            --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
+            --flex 2 --target-eco 2100 --max-stops 1
+
+          echo "::group::Active providers"
+          python hunt.py providers
+          echo "::endgroup::"
+
+          echo "::group::Digest (scan + alerts)"
+          python hunt.py digest --dry-run
+          echo "::endgroup::"
+
+          echo "::group::Same flight, every market"
+          python scripts/print_matrix.py
+          echo "::endgroup::"
+
+          python hunt.py dashboard --out dashboard.html
+
+      # Download this from the run's Summary page to open the full dashboard.
+      - name: Upload dashboard
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fare-hunter-dashboard
+          path: dashboard.html
