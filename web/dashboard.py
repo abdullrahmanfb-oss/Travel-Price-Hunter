@@ -12,7 +12,7 @@ business keep separate panels, same as everywhere else in the system.
 import html
 import json
 
-from core import clock, compare, watches
+from core import clock, compare, countries, watches
 from providers import registry
 from storage import db
 
@@ -50,8 +50,9 @@ def collect(cfg=None):
             if gap is not None and gap >= threshold:
                 badges.append(("gap", "⚑ cheaper abroad"))
                 alerts.append(
-                    f'{w["id"]} {var}: {last["amount_sar"]:.0f} SAR via '
-                    f'{last["pos_code"]} vs {sa["amount_sar"]:.0f} SAR in SA '
+                    f'{w["id"]} {var}: {last["amount_sar"]:,.0f} SAR bought '
+                    f'from {countries.label(last["pos_code"])} vs '
+                    f'{sa["amount_sar"]:,.0f} SAR in {countries.label("SA")} '
                     f'(-{gap:.0f}%)')
             if med is None:
                 badges.append(("quiet", why))
@@ -60,6 +61,7 @@ def collect(cfg=None):
                 "variant": var, "current": cur, "median": med, "why": why,
                 "target": target, "history": hist, "last": last,
                 "gap": gap, "sa": sa, "badges": badges,
+                "countries": db.country_prices(w["id"], var, 7),
             })
             if gap is not None:
                 gaps.append({
@@ -174,17 +176,19 @@ def _panel(w, p, chart_id):
         f'<span class="badge {BADGE_CLASS[k]}">{_e(t)}</span>'
         for k, t in p["badges"])
     last = p["last"]
-    src = (f'{_e(last["provider"])} · market {_e(last["pos_code"])} '
+    src = (f'{_e(last["provider"])} · bought from '
+           f'{_e(countries.label(last["pos_code"]))} '
            f'· {last["amount_native"]:,.0f} {_e(last["currency"])}')
+    home = countries.label("SA")
     gapline = ""
     if p["gap"] is not None:
         sa_amt = p["sa"]["amount_sar"]
         if p["gap"] > 0:
-            gtxt = (f'{p["gap"]:.1f}% cheaper than the SA price '
+            gtxt = (f'{p["gap"]:.1f}% cheaper than {home} '
                     f'({sa_amt:,.0f} SAR)')
             gcls = "down"
         else:
-            gtxt = f'{-p["gap"]:.1f}% above the SA price ({sa_amt:,.0f} SAR)'
+            gtxt = f'{-p["gap"]:.1f}% above {home} ({sa_amt:,.0f} SAR)'
             gcls = "up"
         gapline = (f'<div class="srcline"><span class="delta {gcls}">'
                    f'{gtxt}</span></div>')
@@ -197,7 +201,35 @@ def _panel(w, p, chart_id):
   <div class="srcline">{src}</div>
   {gapline}
   {_chart(p["history"], p["target"], chart_id)}
+  {_bycountry(p["countries"])}
 </div>'''
+
+
+def _bycountry(rows):
+    """Horizontal bars, cheapest country first — compare at a glance."""
+    if len(rows) < 2:
+        return ""
+    mx = max(r["best_sar"] for r in rows)
+    out = ['<div class="bycountry">'
+           '<div class="bc-title">Price by country · cheapest seen, '
+           'last 7 days · SAR</div>']
+    for i, r in enumerate(rows):
+        chips = ""
+        if i == 0:
+            chips += '<span class="badge b-good">cheapest</span>'
+        if r["pos_code"] == "SA":
+            chips += '<span class="badge b-muted">home</span>'
+        width = max(2.0, r["best_sar"] / mx * 100)
+        home_cls = " home" if r["pos_code"] == "SA" else ""
+        out.append(
+            f'<div class="bc-row{home_cls}">'
+            f'<span class="bc-name">{_e(countries.label(r["pos_code"]))}</span>'
+            f'<span class="bc-track"><span class="bc-bar" '
+            f'style="width:{width:.1f}%"></span></span>'
+            f'<span class="bc-val">{r["best_sar"]:,.0f}</span>'
+            f'<span class="bc-chips">{chips}</span></div>')
+    out.append('</div>')
+    return "".join(out)
 
 
 def _card(c, idx):
@@ -228,12 +260,13 @@ def _gap_table(gaps, threshold):
         rows.append(
             f'<tr><td>{_e(g["watch"])}</td><td>{_e(g["variant"])}</td>'
             f'<td class="num-cell">{g["best"]:,.0f}</td>'
-            f'<td>{_e(g["pos"])} · {_e(g["provider"])}</td>'
+            f'<td>{_e(countries.label(g["pos"]))} · {_e(g["provider"])}</td>'
             f'<td class="num-cell">{g["sa"]:,.0f}</td>'
             f'<td class="num-cell">{g["gap"]:+.1f}%</td><td>{flag}</td></tr>')
+    home = _e(countries.label("SA"))
     return f'''<div class="scroll"><table>
 <thead><tr><th>watch</th><th>cabin</th><th>best now (SAR)</th>
-<th>market</th><th>SA price (SAR)</th><th>saved vs SA</th>
+<th>cheapest country</th><th>{home} (SAR)</th><th>saved vs home</th>
 <th>≥{threshold:.0f}%</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>'''
 
@@ -244,13 +277,13 @@ def _wins_table(wins):
                 'once watches exist and scans run.</p>')
     rows = "".join(
         f'<tr><td>{_e(r["watch_id"])}</td><td>{_e(r["variant"])}</td>'
-        f'<td>{_e(r["pos_code"])}</td>'
+        f'<td>{_e(countries.label(r["pos_code"]))}</td>'
         f'<td class="num-cell">{r["wins"]}</td>'
         f'<td class="num-cell">{r["best_sar"]:,.0f}</td></tr>'
         for r in wins)
     return f'''<div class="scroll"><table>
-<thead><tr><th>watch</th><th>cabin</th><th>market</th>
-<th>daily wins (30d)</th><th>best seen (SAR)</th></tr></thead>
+<thead><tr><th>watch</th><th>cabin</th><th>country</th>
+<th>days it was cheapest (30d)</th><th>best seen (SAR)</th></tr></thead>
 <tbody>{rows}</tbody></table></div>'''
 
 
@@ -319,12 +352,12 @@ def render(cfg=None) -> str:
 <section><h2>Watches</h2><div class="grid">{cards}</div></section>
 
 <section><h2>Saudi price gap</h2>
-<p class="note">Best current price anywhere vs the latest SA-market price
-for the same thing, after SAR normalisation. Gaps of
-{d["threshold"]:.0f}%+ are flagged.</p>
+<p class="note">Best current price anywhere vs the latest price in
+{countries.label("SA")} for the same thing, after SAR normalisation.
+Gaps of {d["threshold"]:.0f}%+ are flagged.</p>
 {_gap_table(d["gaps"], d["threshold"])}</section>
 
-<section><h2>Market wins</h2>{_wins_table(d["market_wins"])}</section>
+<section><h2>Which country wins</h2>{_wins_table(d["market_wins"])}</section>
 
 <section><h2>Holds — awaiting your payment</h2>{_holds(d["holds"])}</section>
 
@@ -464,6 +497,24 @@ h2 { font: 600 13px/1 "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
   color: var(--bg); font: 500 12px/1.4 "IBM Plex Mono", monospace;
   padding: 5px 8px; border-radius: 5px; transform: translate(-50%, -130%);
   white-space: nowrap; z-index: 3; }
+
+.bycountry { margin-top: 14px; display: grid; gap: 5px; }
+.bc-title { font: 600 10.5px "IBM Plex Sans Condensed", "Arial Narrow",
+  sans-serif; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); margin-bottom: 2px; }
+.bc-row { display: grid;
+  grid-template-columns: minmax(110px, 150px) 1fr 64px auto;
+  gap: 8px; align-items: center; font-size: 12.5px; min-width: 0; }
+.bc-name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.bc-track { background: var(--chart-grid); border-radius: 3px;
+  height: 10px; overflow: hidden; }
+.bc-bar { display: block; height: 100%; background: var(--accent);
+  border-radius: 3px; }
+.bc-row.home .bc-bar { opacity: .45; }
+.bc-val { font: 500 12px "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums; text-align: right; }
+.bc-chips { display: flex; gap: 4px; min-width: 68px; }
 
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px;

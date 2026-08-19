@@ -30,7 +30,7 @@ import requests
 import yaml
 from pathlib import Path
 
-from core import clock, digest, search, watches
+from core import clock, countries, digest, search, watches
 from providers import registry
 from storage import db
 
@@ -187,16 +187,18 @@ def cmd_markets(a):
     rows = db.market_report(a.route)
     if not rows:
         return print(f"no data for {a.route} yet")
-    print(f'{"POS":<5}{"scans":>7}{"wins":>6}{"edge":>8}')
+    print(f'{"country":<24}{"scans":>7}{"wins":>6}{"edge":>8}')
     for r in rows:
-        print(f'{r["pos_code"]:<5}{r["scans"]:>7}{r["wins"]:>6}'
-              f'{r["best_edge"]:>7.1f}%')
+        print(f'{countries.label(r["pos_code"]):<24}{r["scans"]:>7}'
+              f'{r["wins"]:>6}{r["best_edge"]:>7.1f}%')
     cold = db.cold_markets(a.route)
     due = db.due_for_reprobe(a.route)
     if cold:
-        print(f'\nresting: {", ".join(sorted(cold))}')
+        print('\nresting: '
+              + ", ".join(countries.label(c) for c in sorted(cold)))
     if due:
-        print(f'due for re-probe next scan: {", ".join(sorted(due))}')
+        print('due for re-probe next scan: '
+              + ", ".join(countries.label(c) for c in sorted(due)))
 
 
 def cmd_providers(a):

@@ -3,7 +3,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 
-from core import clock, compare, watches
+from core import clock, compare, countries, watches
 from providers import registry
 from storage import db
 
@@ -45,8 +45,9 @@ def _offer_block(w, o, variant, edge_threshold=25.0):
     if sa_ref and gap >= edge_threshold and o["pos"]["code"] != "SA":
         mark += "  \u2691 CHEAPER ABROAD"
         alerts.append(
-            f'{w["id"]} {variant}: {o["sar_est"]:.0f} SAR via {o["pos"]["code"]}'
-            f' vs {sa_ref:.0f} SAR in SA (-{gap:.0f}%)')
+            f'{w["id"]} {variant}: {o["sar_est"]:,.0f} SAR bought from '
+            f'{countries.label(o["pos"]["code"])} vs {sa_ref:,.0f} SAR in '
+            f'{countries.label("SA")} (-{gap:.0f}%)')
 
     src = o["provider"]
     if o.get("also_seen"):
@@ -67,12 +68,24 @@ def _offer_block(w, o, variant, edge_threshold=25.0):
     lines = [
         f'  {variant:<9} {o["sar_est"]:>8.0f} SAR{delta}{mark}',
         f'            {o.get("label") or ""} · {extra}',
-        f'            {src} · market {o["pos"]["code"]} '
-        f'({o["amount"]:.0f} {o["currency"]})'
-        + (f' · {o["market_edge_pct"]:+.1f}% vs SA'
+        f'            {src} · bought from {countries.label(o["pos"]["code"])} '
+        f'({o["amount"]:,.0f} {o["currency"]})'
+        + (f' · {o["market_edge_pct"]:+.1f}% vs {countries.label("SA")}'
            if o.get("market_edge_pct") else "") + f' · {book}',
         f'            {why}',
     ]
+    # one line that ranks the countries for this exact trip
+    cc = db.country_prices(w["id"], variant, 7)
+    if len(cc) > 1:
+        shown = cc[:4]
+        if not any(r["pos_code"] == "SA" for r in shown):
+            sa_row = next((r for r in cc if r["pos_code"] == "SA"), None)
+            if sa_row:
+                shown.append(sa_row)
+        parts = [f'{countries.label(r["pos_code"])} {r["best_sar"]:,.0f}'
+                 + (" (home)" if r["pos_code"] == "SA" else "")
+                 for r in shown]
+        lines.append(f'            countries: {" · ".join(parts)}')
     for f in o.get("flags", []):
         lines.append(f'            \u26a0 {f}')
     if o.get("deep_link"):

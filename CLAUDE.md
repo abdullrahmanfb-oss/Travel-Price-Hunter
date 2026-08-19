@@ -14,6 +14,7 @@ core/
   compare.py       FX normalise, filters, per-cabin drop detection
   digest.py        daily email builder
   clock.py         all time goes through here (tz-aware UTC)
+  countries.py     POS code -> flag + name; no bare ISO codes in output
 storage/db.py      watches, price_history, market_stats, holds
 providers/duffel.py  search + hold orders
 web/dashboard.py   self-contained HTML dashboard (hunt.py serve | dashboard)

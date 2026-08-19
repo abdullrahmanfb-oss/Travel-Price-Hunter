@@ -232,6 +232,21 @@ def market_wins(days=30):
                ORDER BY 1,2,4 DESC""", (cutoff, cutoff))]
 
 
+def country_prices(watch_id, variant, days=7):
+    """Cheapest recent price per country, ascending — the one query
+    behind every 'compare countries' view (digest line, dashboard bars).
+    """
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            """SELECT pos_code, MIN(amount_sar) best_sar,
+                      MAX(substr(seen_at,1,10)) last_seen
+               FROM price_history
+               WHERE watch_id=? AND variant=? AND seen_at>?
+               GROUP BY pos_code ORDER BY best_sar ASC""",
+            (watch_id, variant, cutoff))]
+
+
 def previous_best(watch_id, variant):
     with conn() as c:
         r = c.execute(
