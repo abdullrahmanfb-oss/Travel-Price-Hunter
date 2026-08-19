@@ -70,8 +70,8 @@ def collect(cfg=None):
                     "provider": last["provider"], "sa": sa["amount_sar"],
                     "gap": gap, "flagged": gap >= threshold,
                 })
-        if panels:
-            cards.append({"watch": w, "panels": panels})
+        # a watch with no history yet still belongs on the board
+        cards.append({"watch": w, "panels": panels})
 
     pos_seen = {m["pos_code"] for m in db.market_wins(30)}
     return {
@@ -238,6 +238,11 @@ def _card(c, idx):
         f'<span class="badge b-muted">{_e(w["status"])}</span>'
     panels = "".join(_panel(w, p, f'c{idx}-{i}')
                      for i, p in enumerate(c["panels"]))
+    if not panels:
+        panels = ('<div class="panel"><p class="empty">Watching — awaiting '
+                  'the first scan with prices. Scans need provider '
+                  'credentials (e.g. <code>DUFFEL_TOKEN</code>), then '
+                  '<code>python hunt.py scan</code>.</p></div>')
     return f'''<article class="card">
   <header class="card-head">
     <h3>{_e(w["id"])}</h3>
@@ -341,7 +346,7 @@ def render(cfg=None) -> str:
 </header>
 
 <section class="tiles">
-  <div class="tile"><span class="t-num">{len(d["cards"])}</span><span class="t-lbl">watches priced</span></div>
+  <div class="tile"><span class="t-num">{len(d["cards"])}</span><span class="t-lbl">watches</span></div>
   <div class="tile"><span class="t-num">{n_panels}</span><span class="t-lbl">price tracks</span></div>
   <div class="tile"><span class="t-num">{d["markets_seen"]}</span><span class="t-lbl">markets seen (30d)</span></div>
   <div class="tile"><span class="t-num">{len(d["holds"])}</span><span class="t-lbl">open holds</span></div>
