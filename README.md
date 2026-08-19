@@ -74,8 +74,10 @@ of daily lows (not the last sample). Needs 5 days of history first.
 - Non-bookable sources labelled `link-only` so the digest never implies
   it can hold something it can't
 
+## FX
+Live rates (open.er-api.com, no key needed), cached 6h in `.fx_cache.json`.
+Fallback order: fresh cache → live fetch → stale cache → static snapshot.
+
 ## TODO
-- Live FX in `hunt.py: fx_rates()` - **highest value**, stale rates
-  silently corrupt every cross-market comparison
 - RateHawk region_id resolution via /search/multicomplete
 - Almosafer / Wego for ex-KSA routes

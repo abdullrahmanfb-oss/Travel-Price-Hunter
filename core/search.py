@@ -86,6 +86,10 @@ def _one(watch, provider, pos, variant, slice_set, route):
 
 
 def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
+    tune = (cfg or {}).get("search", {})
+    deep_margin = tune.get("deep_margin", DEEP_MARGIN)
+    max_deep = tune.get("max_deep_combos", MAX_DEEP_COMBOS)
+
     product = watch["product"]
     route = watches.route_key(watch)
     providers = registry.active(product)
@@ -118,11 +122,11 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             key = (o["provider"], o["pos"]["code"])
             if key in seen:
                 continue
-            if o["sar_est"] <= leader * (1 + DEEP_MARGIN):
+            if o["sar_est"] <= leader * (1 + deep_margin):
                 pr = next(p for p in providers if p.NAME == o["provider"])
                 combos.append((pr, o["pos"]))
                 seen.add(key)
-            if len(combos) >= MAX_DEEP_COMBOS:
+            if len(combos) >= max_deep:
                 break
 
         # ---- phase 2 ----

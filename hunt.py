@@ -22,7 +22,9 @@ Multi-provider, multi-market, daily digest. Never stores or charges a card.
 import argparse
 import json
 import sys
+import time
 
+import requests
 import yaml
 from pathlib import Path
 
@@ -32,17 +34,54 @@ from storage import db
 
 CFG = yaml.safe_load((Path(__file__).parent / "config.yaml").read_text())
 
+FX_URL = "https://open.er-api.com/v6/latest/SAR"
+FX_CACHE = Path(__file__).parent / ".fx_cache.json"
+FX_TTL = 6 * 3600
+
+# Last-resort snapshot (2026-08). Only used when the live feed AND the
+# cache are both unavailable — stale FX silently corrupts every
+# cross-market comparison, so live-with-cache is the normal path.
+STATIC_FX = {"SAR": 1.0, "USD": 3.75, "AED": 1.021, "EUR": 4.06, "GBP": 4.78,
+             "INR": 0.0451, "TRY": 0.0925, "KZT": 0.0078, "PKR": 0.0135,
+             "EGP": 0.0775, "JPY": 0.0243, "SGD": 2.79, "MYR": 0.845,
+             "THB": 0.108, "IDR": 0.00023, "VND": 0.000148, "PHP": 0.0645,
+             "ZAR": 0.207, "PLN": 0.94, "RON": 0.82, "HUF": 0.0103,
+             "QAR": 1.03, "KWD": 12.2, "BHD": 9.95, "OMR": 9.74,
+             "JOD": 5.29, "MAD": 0.375, "LKR": 0.0126, "KRW": 0.0027}
+
 
 def fx_rates():
-    """TODO(claude-code): replace with a live feed, cache 6h.
-    Stale FX silently corrupts every cross-market comparison."""
-    return {"SAR": 1.0, "USD": 3.75, "AED": 1.021, "EUR": 4.06, "GBP": 4.78,
-            "INR": 0.0451, "TRY": 0.0925, "KZT": 0.0078, "PKR": 0.0135,
-            "EGP": 0.0775, "JPY": 0.0243, "SGD": 2.79, "MYR": 0.845,
-            "THB": 0.108, "IDR": 0.00023, "VND": 0.000148, "PHP": 0.0645,
-            "ZAR": 0.207, "PLN": 0.94, "RON": 0.82, "HUF": 0.0103,
-            "QAR": 1.03, "KWD": 12.2, "BHD": 9.95, "OMR": 9.74,
-            "JOD": 5.29, "MAD": 0.375, "LKR": 0.0126, "KRW": 0.0027}
+    """SAR per 1 unit of each currency. Live feed, cached 6h on disk.
+
+    Fallback order: fresh cache -> live fetch -> stale cache -> static
+    snapshot. A stale live rate still beats the static table.
+    """
+    try:
+        cached = json.loads(FX_CACHE.read_text())
+    except Exception:
+        cached = None
+    if cached and time.time() - cached["fetched_at"] < FX_TTL:
+        return cached["rates"]
+    try:
+        r = requests.get(FX_URL, timeout=15)
+        r.raise_for_status()
+        d = r.json()
+        if d.get("result") != "success":
+            raise ValueError(f'fx feed returned {d.get("result")!r}')
+        # Feed quotes units-per-SAR; comparisons need SAR-per-unit.
+        rates = {c: round(1.0 / v, 6) for c, v in d["rates"].items() if v}
+        rates["SAR"] = 1.0
+        FX_CACHE.write_text(json.dumps(
+            {"fetched_at": time.time(), "rates": rates}))
+        return rates
+    except Exception as e:
+        if cached:
+            print(f"fx: live feed failed ({e}); using cached rates",
+                  file=sys.stderr)
+            return cached["rates"]
+        print(f"fx: live feed failed ({e}); using static snapshot",
+              file=sys.stderr)
+        return STATIC_FX
 
 
 def _parse_slices(raw):

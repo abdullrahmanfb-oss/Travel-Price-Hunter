@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+hunter.db
+.fx_cache.json
+hunt.log
+.env

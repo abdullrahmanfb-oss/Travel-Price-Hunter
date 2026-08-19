@@ -17,9 +17,41 @@ MKT = [("SA","SAR",1.0),("TR","TRY",10.81),("IN","INR",22.17),
 PROV = {"flight":["duffel","amadeus","kiwi"],
         "hotel":["amadeus-hotels"],"car":["amadeus-cars"]}
 
+WATCHES = [
+    {"id": "lisbon", "product": "flight", "trip_type": "round",
+     "slices_json": json.dumps([
+         {"origin": "RUH", "destination": "LIS", "date": "2026-10-05"},
+         {"origin": "LIS", "destination": "RUH", "date": "2026-10-12"}]),
+     "cabins": "economy,business", "date_model": "flex", "flex_days": 3,
+     "adults": 2, "target_eco": 2800, "target_biz": 9500,
+     "status": "active", "created_at": clock.iso()},
+    {"id": "tour", "product": "flight", "trip_type": "multi",
+     "slices_json": json.dumps([
+         {"origin": "RUH", "destination": "IST", "date": "2026-11-01"},
+         {"origin": "IST", "destination": "VIE", "date": "2026-11-05"},
+         {"origin": "VIE", "destination": "RUH", "date": "2026-11-10"}]),
+     "cabins": "economy", "date_model": "fixed",
+     "status": "active", "created_at": clock.iso()},
+    {"id": "oneway", "product": "flight", "trip_type": "oneway",
+     "slices_json": json.dumps([
+         {"origin": "RUH", "destination": "DXB", "date": "2026-09-15"}]),
+     "cabins": "economy", "date_model": "fixed",
+     "status": "active", "created_at": clock.iso()},
+    {"id": "almaty", "product": "hotel", "city": "ALA",
+     "checkin": "2026-09-28", "checkout": "2026-10-03", "adults": 2,
+     "date_model": "fixed", "target": 2400,
+     "status": "active", "created_at": clock.iso()},
+    {"id": "almaty-car", "product": "car", "pickup_location": "ALA",
+     "pickup_at": "2026-09-29T10:00", "dropoff_at": "2026-10-06T10:00",
+     "date_model": "fixed", "target": 900,
+     "status": "active", "created_at": clock.iso()},
+]
+
 def seed():
     with db.conn() as c:
         c.execute("DELETE FROM price_history")
+    for w in WATCHES:
+        db.add_watch(w)
     now = clock.now()
     prods = {w["id"]: w["product"] for w in db.list_watches()}
     for (wid,var),base in BASE.items():
