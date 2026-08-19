@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Print the same-flight market matrix to stdout — for CI logs.
+
+One block per watch/cabin: the winning itinerary priced from every market
+that quoted it, cheapest first, names not codes.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core import countries, watches
+from storage import db
+
+
+def main():
+    any_rows = False
+    for w in db.list_watches():
+        if w["product"] != "flight":
+            continue
+        for var in watches.variants(w):
+            rows = db.latest_matrix(w["id"], var)
+            if not rows:
+                continue
+            any_rows = True
+            head = rows[0]
+            stops = head.get("stops")
+            stops_txt = "direct" if stops == 0 else f"{stops} stop(s)"
+            print(f"\n=== {w['id']} · {var} · flight {head['itin_key']} "
+                  f"({head.get('carrier') or '?'}) · {stops_txt} ===")
+            for i, r in enumerate(rows):
+                tag = "  <- cheapest" if i == 0 else \
+                    ("  (home)" if r["pos_code"] == "SA" else "")
+                print(f"  {countries.label(r['pos_code']):<24} "
+                      f"{r['amount_sar']:>10,.0f} SAR   "
+                      f"{r['amount_native']:>12,.0f} {r['currency']}{tag}")
+    if not any_rows:
+        print("No matrix rows yet — a market quote for the winning flight "
+              "needs at least two markets pricing the same itinerary.")
+
+
+if __name__ == "__main__":
+    main()

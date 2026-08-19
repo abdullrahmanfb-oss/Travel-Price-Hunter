@@ -9,6 +9,8 @@ independently would produce itineraries that make no sense.
 import calendar
 from datetime import date, datetime, timedelta
 
+from core import clock
+
 MAX_VARIANTS = 40
 
 
@@ -43,7 +45,7 @@ def _flex(slices, flex):
     out = []
     for i in range(-flex, flex + 1):
         shifted = _shift(slices, i)
-        if _d(shifted[0]["date"]) < date.today():
+        if _d(shifted[0]["date"]) < clock.today_date():
             continue
         out.append(shifted)
     return out[:MAX_VARIANTS]
@@ -55,7 +57,7 @@ def _month(watch, slices):
     out = []
     for day in range(1, calendar.monthrange(y, m)[1] + 1):
         target = date(y, m, day)
-        if target < date.today():
+        if target < clock.today_date():
             continue
         out.append(_shift(slices, (target - base).days))
     return _thin(out)
@@ -66,7 +68,7 @@ def _rolling(watch, slices):
     base = _d(slices[0]["date"])
     out = []
     for i in range(span):
-        target = date.today() + timedelta(days=i)
+        target = clock.today_date() + timedelta(days=i)
         out.append(_shift(slices, (target - base).days))
     return _thin(out)
 

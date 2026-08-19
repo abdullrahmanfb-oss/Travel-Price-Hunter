@@ -14,8 +14,10 @@ core/
   compare.py       FX normalise, filters, per-cabin drop detection
   digest.py        daily email builder
   clock.py         all time goes through here (tz-aware UTC)
+  countries.py     POS code -> flag + name; no bare ISO codes in output
 storage/db.py      watches, price_history, market_stats, holds
 providers/duffel.py  search + hold orders
+web/dashboard.py   self-contained HTML dashboard (hunt.py serve | dashboard)
 ```
 
 ## Hard rules
@@ -44,8 +46,11 @@ providers/duffel.py  search + hold orders
   price. Don't "optimise" that sort away.
 
 ## Testing without keys
-`python simulate.py` seeds 31 days across 6 watch/cabin pairs and prints
-the digest. Use it to verify any change to compare.py or digest.py.
+`python simulate.py` seeds 31 days of fictional sample data across 6
+watch/cabin pairs and prints the digest. It runs against a throwaway
+sandbox DB in the system temp dir (`db.use(...)`) and must NEVER touch
+hunter.db — the real watch list stays empty until the user adds a watch.
+Use it to verify any change to compare.py or digest.py.
 
 ## v3 additions
 - Products: flight | hotel | car. `watches.product` switches behaviour.
@@ -59,3 +64,9 @@ the digest. Use it to verify any change to compare.py or digest.py.
 - `bump_market` stamps `last_probe` on every scan. Removing that makes
   newly-cold markets look instantly overdue and pruning stops working.
 - Never claim a non-bookable provider can hold. `BOOKABLE` gates it.
+- Saudi gap: offers beating the SA price by `alerts.market_edge_pct`
+  (config.yaml) get `⚑ CHEAPER ABROAD` in digest + dashboard. Scans record
+  an SA reference sample when SA doesn't win — without it the dashboard
+  gap goes blind on routes SA never wins. `db.latest` returns the
+  cheapest row of the latest day, NOT the newest row, because of those
+  reference samples; `db.market_wins` likewise counts only daily lows.

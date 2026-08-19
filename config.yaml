@@ -1,0 +1,54 @@
+# Fare Hunter configuration.
+# Watches are NOT here — they live in SQLite (python hunt.py flight|hotel|car).
+# This file holds the things that rarely change: who to email, when,
+# search tuning, and the markets (points of sale) to fan out across.
+
+user:
+  email: Abdullrahman.fb@gmail.com
+
+digest:
+  hour_utc: 5            # matches the cron example in the README
+
+alerts:
+  # Flag an offer when a non-SA market beats the SA price for the same
+  # thing by at least this much (after SAR normalisation). 50% cheaper
+  # abroad => flagged; 10% => info line only.
+  market_edge_pct: 25
+
+search:
+  requests_per_minute: 90
+  deep_margin: 0.12      # phase-2 entry: within 12% of the leader
+  max_deep_combos: 6     # at most 6 (provider, market) pairs get the grid
+  workers: 6
+
+# 28 markets. POS/currency are passed as API parameters — the supported
+# path. Every currency here must have an FX rate in hunt.py:fx_rates().
+points_of_sale:
+  - {code: SA, currency: SAR}   # home market — edge is measured against it
+  - {code: AE, currency: AED}
+  - {code: QA, currency: QAR}
+  - {code: KW, currency: KWD}
+  - {code: BH, currency: BHD}
+  - {code: OM, currency: OMR}
+  - {code: JO, currency: JOD}
+  - {code: EG, currency: EGP}
+  - {code: MA, currency: MAD}
+  - {code: TR, currency: TRY}
+  - {code: IN, currency: INR}
+  - {code: PK, currency: PKR}
+  - {code: LK, currency: LKR}
+  - {code: KZ, currency: KZT}
+  - {code: US, currency: USD}
+  - {code: GB, currency: GBP}
+  - {code: DE, currency: EUR}
+  - {code: PT, currency: EUR}
+  - {code: PL, currency: PLN}
+  - {code: RO, currency: RON}
+  - {code: HU, currency: HUF}
+  - {code: ZA, currency: ZAR}
+  - {code: JP, currency: JPY}
+  - {code: KR, currency: KRW}
+  - {code: SG, currency: SGD}
+  - {code: MY, currency: MYR}
+  - {code: TH, currency: THB}
+  - {code: ID, currency: IDR}

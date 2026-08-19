@@ -16,27 +16,25 @@ Multi-provider, 28 markets, one daily digest. **No card stored or charged.**
     export SMTP_PASS=...                 # Gmail App Password
 
 ## Use
-    # round trip, flexible 3 days
-    python hunt.py flight lisbon --slice RUH:LIS:2026-10-05 \
-        --slice LIS:RUH:2026-10-12 --flex 3 --adults 2 \
+Nothing is tracked until you add a watch. Fill in your own airports,
+cities and dates:
+
+    # round trip, flexible 3 days (repeat --slice; 1 = one-way, 3+ = multi-city)
+    python hunt.py flight <id> --slice ORIGIN:DEST:2026-10-05 \
+        --slice DEST:ORIGIN:2026-10-12 --flex 3 --adults 2 \
         --target-eco 2800 --target-biz 9500 --max-stops 1
 
-    # multi-city
-    python hunt.py flight tour --slice RUH:IST:2026-11-01 \
-        --slice IST:VIE:2026-11-05 --slice VIE:RUH:2026-11-10
-
-    # one-way
-    python hunt.py flight dxb --slice RUH:DXB:2026-09-15
-
-    python hunt.py hotel almaty --city ALA --checkin 2026-09-28 \
+    python hunt.py hotel <id> --city CITYCODE --checkin 2026-09-28 \
         --checkout 2026-10-03 --adults 2 --target 2400 --refundable-only
 
-    python hunt.py car almaty-car --pickup ALA \
+    python hunt.py car <id> --pickup LOCATION \
         --from-time 2026-09-29T10:00 --to-time 2026-10-06T10:00 --target 900
 
     python hunt.py digest --dry-run
     python hunt.py providers          # who's active, who's winning
-    python hunt.py markets RUH-LIS-RUH
+    python hunt.py markets <route>    # e.g. ORIGIN-DEST-ORIGIN
+    python hunt.py serve              # live dashboard on http://localhost:8787
+    python hunt.py dashboard          # static export to dashboard.html
 
 Cron: `0 5 * * * cd ~/fare-hunter && python hunt.py digest >> hunt.log 2>&1`
 
@@ -68,14 +66,30 @@ seasonally, so a market that loses all summer can win in autumn.
 economy -8%, business -12%, hotels/cars -7%, measured against the median
 of daily lows (not the last sample). Needs 5 days of history first.
 
+## Saudi price gap
+Any market beating the SA price for the same thing by 25%+ (after SAR
+normalisation, `alerts.market_edge_pct` in config.yaml) is flagged
+`⚑ CHEAPER ABROAD` in the digest and on the dashboard — e.g. 10,000 SAR
+at home, 5,000 SAR bought from Turkey gets flagged at -50%. Scans record
+an SA reference sample whenever SA doesn't win, so the gap stays
+computable from history.
+
+## Dashboard
+`python hunt.py serve` renders straight from hunter.db on every request —
+30-day charts per watch/cabin, target lines, drop/target/gap badges, the
+Saudi-gap table, market wins and holds. `python hunt.py dashboard` writes
+the same page as a single self-contained HTML file.
+
 ## Guards
 - Fares mentioning residency/point-of-sale limits never outrank clean ones
 - Kiwi self-transfer itineraries flagged: missed connection isn't protected
 - Non-bookable sources labelled `link-only` so the digest never implies
   it can hold something it can't
 
+## FX
+Live rates (open.er-api.com, no key needed), cached 6h in `.fx_cache.json`.
+Fallback order: fresh cache → live fetch → stale cache → static snapshot.
+
 ## TODO
-- Live FX in `hunt.py: fx_rates()` - **highest value**, stale rates
-  silently corrupt every cross-market comparison
 - RateHawk region_id resolution via /search/multicomplete
 - Almosafer / Wego for ex-KSA routes

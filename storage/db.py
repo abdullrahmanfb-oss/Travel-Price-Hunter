@@ -1,12 +1,20 @@
 """SQLite store: watches (flight/hotel/car), history, market stats, holds."""
 import json
+import os
 import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
 from core import clock
 
-DB = Path(__file__).parent / "hunter.db"
+DB = Path(os.environ.get("HUNTER_DB",
+                         Path(__file__).resolve().parent.parent / "hunter.db"))
+
+
+def use(path):
+    """Point the store somewhere else (e.g. simulate.py's sandbox DB)."""
+    global DB
+    DB = Path(path)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS watches (
@@ -62,6 +70,24 @@ CREATE TABLE IF NOT EXISTS price_history (
     seen_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_hist ON price_history(watch_id, variant, seen_at);
+
+-- one specific flight (same flight numbers + dates), quoted from every
+-- market that priced it in a scan; one snapshot per scan per cabin
+CREATE TABLE IF NOT EXISTS flight_matrix (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id    TEXT NOT NULL,
+    variant     TEXT NOT NULL,
+    itin_key    TEXT NOT NULL,       -- 'LH633+LH1172' style label
+    carrier     TEXT,
+    stops       INTEGER,
+    pos_code    TEXT NOT NULL,
+    currency    TEXT NOT NULL,
+    amount_native REAL NOT NULL,
+    amount_sar  REAL NOT NULL,
+    seen_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_matrix
+    ON flight_matrix(watch_id, variant, seen_at);
 
 CREATE TABLE IF NOT EXISTS market_stats (
     route     TEXT NOT NULL,
@@ -174,6 +200,71 @@ def daily_lows(watch_id, variant, days=30):
                GROUP BY d ORDER BY d""", (watch_id, variant, cutoff))]
 
 
+def latest(watch_id, variant):
+    """Cheapest offer from the most recent day with data.
+    A day can hold reference samples too (e.g. the SA price recorded
+    alongside a cheaper market), so 'newest row' is not 'the best'.
+    """
+    with conn() as c:
+        r = c.execute(
+            """SELECT * FROM price_history WHERE watch_id=? AND variant=?
+               AND substr(seen_at,1,10) =
+                   (SELECT substr(MAX(seen_at),1,10) FROM price_history
+                    WHERE watch_id=? AND variant=?)
+               ORDER BY amount_sar ASC LIMIT 1""",
+            (watch_id, variant, watch_id, variant)).fetchone()
+    return dict(r) if r else None
+
+
+def latest_for_pos(watch_id, variant, pos_code, days=7):
+    """Cheapest sample from the most recent day that has this market."""
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        r = c.execute(
+            """SELECT * FROM price_history
+               WHERE watch_id=? AND variant=? AND pos_code=? AND seen_at>?
+               ORDER BY substr(seen_at,1,10) DESC, amount_sar ASC LIMIT 1""",
+            (watch_id, variant, pos_code, cutoff)).fetchone()
+    return dict(r) if r else None
+
+
+def market_wins(days=30):
+    """How often each market produced the daily low, from history.
+    Counts only rows that WERE the day's low — reference samples
+    (e.g. the SA price recorded alongside a cheaper market) don't count.
+    """
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            """SELECT h.watch_id, h.variant, h.pos_code, COUNT(*) wins,
+                      MIN(h.amount_sar) best_sar
+               FROM price_history h
+               JOIN (SELECT watch_id, variant, substr(seen_at,1,10) d,
+                            MIN(amount_sar) low
+                     FROM price_history WHERE seen_at>?
+                     GROUP BY 1,2,3) m
+                 ON m.watch_id=h.watch_id AND m.variant=h.variant
+                AND substr(h.seen_at,1,10)=m.d AND h.amount_sar=m.low
+               WHERE h.seen_at>?
+               GROUP BY 1,2,3
+               ORDER BY 1,2,4 DESC""", (cutoff, cutoff))]
+
+
+def country_prices(watch_id, variant, days=7):
+    """Cheapest recent price per country, ascending — the one query
+    behind every 'compare countries' view (digest line, dashboard bars).
+    """
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            """SELECT pos_code, MIN(amount_sar) best_sar,
+                      MAX(substr(seen_at,1,10)) last_seen
+               FROM price_history
+               WHERE watch_id=? AND variant=? AND seen_at>?
+               GROUP BY pos_code ORDER BY best_sar ASC""",
+            (watch_id, variant, cutoff))]
+
+
 def previous_best(watch_id, variant):
     with conn() as c:
         r = c.execute(
@@ -181,6 +272,39 @@ def previous_best(watch_id, variant):
                WHERE watch_id=? AND variant=? AND substr(seen_at,1,10)<?""",
             (watch_id, variant, clock.today())).fetchone()
     return r["low"] if r and r["low"] is not None else None
+
+
+def record_matrix(watch_id, variant, itin_key, carrier, rows):
+    """One snapshot: the same flight quoted from every market that
+    priced it this scan. `rows`: [{pos_code, currency, amount_native,
+    amount_sar, stops}]."""
+    now = clock.iso()
+    with conn() as c:
+        for r in rows:
+            c.execute(
+                """INSERT INTO flight_matrix
+                   (watch_id,variant,itin_key,carrier,stops,pos_code,
+                    currency,amount_native,amount_sar,seen_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (watch_id, variant, itin_key, carrier, r.get("stops"),
+                 r["pos_code"], r["currency"], r["amount_native"],
+                 r["amount_sar"], now))
+
+
+def latest_matrix(watch_id, variant):
+    """Rows of the most recent same-flight snapshot, cheapest first."""
+    with conn() as c:
+        r = c.execute(
+            """SELECT MAX(seen_at) m FROM flight_matrix
+               WHERE watch_id=? AND variant=?""",
+            (watch_id, variant)).fetchone()
+        if not r or not r["m"]:
+            return []
+        return [dict(x) for x in c.execute(
+            """SELECT * FROM flight_matrix
+               WHERE watch_id=? AND variant=? AND seen_at=?
+               ORDER BY amount_sar ASC""",
+            (watch_id, variant, r["m"]))]
 
 
 # ---------- market pruning ----------

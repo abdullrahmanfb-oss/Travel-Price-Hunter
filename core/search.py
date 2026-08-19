@@ -86,6 +86,10 @@ def _one(watch, provider, pos, variant, slice_set, route):
 
 
 def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
+    tune = (cfg or {}).get("search", {})
+    deep_margin = tune.get("deep_margin", DEEP_MARGIN)
+    max_deep = tune.get("max_deep_combos", MAX_DEEP_COMBOS)
+
     product = watch["product"]
     route = watches.route_key(watch)
     providers = registry.active(product)
@@ -118,11 +122,11 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             key = (o["provider"], o["pos"]["code"])
             if key in seen:
                 continue
-            if o["sar_est"] <= leader * (1 + DEEP_MARGIN):
+            if o["sar_est"] <= leader * (1 + deep_margin):
                 pr = next(p for p in providers if p.NAME == o["provider"])
                 combos.append((pr, o["pos"]))
                 seen.add(key)
-            if len(combos) >= MAX_DEEP_COMBOS:
+            if len(combos) >= max_deep:
                 break
 
         # ---- phase 2 ----
@@ -135,9 +139,8 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                 for f in as_completed(futs):
                     p2 += f.result()
 
-        merged = registry.merge(
-            compare.rank(compare.apply_filters(p1 + p2, watch), rates),
-            product)
+        ranked = compare.rank(compare.apply_filters(p1 + p2, watch), rates)
+        merged = registry.merge(ranked, product)
         merged = sorted(merged, key=lambda x: (not x["clean"], x["sar_est"]))
         if not merged:
             continue
@@ -152,6 +155,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         edge = round((sa_ref - best["sar_est"]) / sa_ref * 100, 1) \
             if sa_ref else 0.0
         best["market_edge_pct"] = edge
+        best["sa_ref_sar"] = sa_ref
 
         for pos in warm:
             db.bump_market(route, pos["code"],
@@ -161,10 +165,54 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             db.bump_provider(route, pr.NAME, won=(pr.NAME == best["provider"]))
 
         db.record(watch["id"], product, variant, best)
+        # Also record the SA reference sample when SA didn't win, so the
+        # dashboard's Saudi-gap view stays live even on routes where the
+        # home market never produces the best price.
+        if sa_ref is not None and best["pos"]["code"] != "SA":
+            sa_offer = min((o for o in merged
+                            if o["pos"]["code"] == "SA"),
+                           key=lambda x: x["sar_est"])
+            db.record(watch["id"], product, variant, sa_offer)
+        # same flight, every market: keep each market's quote for the
+        # winning itinerary so the dashboard can show them side by side
+        if product == "flight":
+            _record_matrix(watch, variant, best, ranked)
+
         best["alternatives"] = merged[1:4]
         results.append(best)
 
     return results
+
+
+def _record_matrix(watch, variant, best, ranked):
+    """For the winning itinerary (same flight numbers + departure times),
+    record the cheapest quote from each market that priced it."""
+    keyfn = registry.KEYFN["flight"]
+    try:
+        key = keyfn(best)
+    except Exception:
+        return
+    if not key:
+        return
+    by_pos = {}
+    for o in ranked:
+        try:
+            if keyfn(o) != key:
+                continue
+        except Exception:
+            continue
+        pc = o["pos"]["code"]
+        cur = by_pos.get(pc)
+        if cur is None or o["sar_est"] < cur["sar_est"]:
+            by_pos[pc] = o
+    if len(by_pos) < 2:
+        return
+    label = "+".join(s.get("flight", "?") for s in best.get("segments", []))
+    db.record_matrix(
+        watch["id"], variant, label, best.get("carrier"),
+        [{"pos_code": pc, "currency": o["currency"],
+          "amount_native": o["amount"], "amount_sar": o["sar_est"],
+          "stops": o.get("stops")} for pc, o in by_pos.items()])
 
 
 def _detail(o):
