@@ -11,7 +11,7 @@ import json, random, tempfile
 from datetime import timedelta
 from pathlib import Path
 
-from core import clock, compare, digest
+from core import clock, compare, countries, digest
 from storage import db
 
 db.use(Path(tempfile.gettempdir()) / "fare-hunter-simulation.db")
@@ -63,6 +63,7 @@ def seed():
     with db.conn() as c:
         c.execute("DELETE FROM price_history")
         c.execute("DELETE FROM watches")
+        c.execute("DELETE FROM flight_matrix")
     for w in WATCHES:
         db.add_watch(w)
     now = clock.now()
@@ -89,6 +90,20 @@ def seed():
                     c.execute(ins,(wid,prod,var,"duffel","SA","SAR",
                        round(price*1.55,2),round(price*1.55,2),"Sample","{}",
                        1,"",f"sa{d}",seen))
+    # same-flight market matrix demo: one fictional flight (XY123+XY456),
+    # quoted from most of the 28 markets, economy and business separately
+    for var, base in (("economy", 2600), ("business", 11500)):
+        rows = []
+        for code in countries.NAME:
+            if code != "SA" and random.random() < 0.25:
+                continue          # not every market quotes every flight
+            mult = (1.55 if var == "business" else 1.18) if code == "SA" \
+                else random.uniform(0.95, 1.30)
+            sar = round(base * mult, 2)
+            rows.append({"pos_code": code, "currency": "SAR",
+                         "amount_native": sar, "amount_sar": sar, "stops": 1})
+        db.record_matrix("sample-round", var, "XY123+XY456", "Sample Air",
+                         rows)
 
 def today_best():
     out={}

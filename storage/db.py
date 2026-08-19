@@ -71,6 +71,24 @@ CREATE TABLE IF NOT EXISTS price_history (
 );
 CREATE INDEX IF NOT EXISTS ix_hist ON price_history(watch_id, variant, seen_at);
 
+-- one specific flight (same flight numbers + dates), quoted from every
+-- market that priced it in a scan; one snapshot per scan per cabin
+CREATE TABLE IF NOT EXISTS flight_matrix (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id    TEXT NOT NULL,
+    variant     TEXT NOT NULL,
+    itin_key    TEXT NOT NULL,       -- 'LH633+LH1172' style label
+    carrier     TEXT,
+    stops       INTEGER,
+    pos_code    TEXT NOT NULL,
+    currency    TEXT NOT NULL,
+    amount_native REAL NOT NULL,
+    amount_sar  REAL NOT NULL,
+    seen_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_matrix
+    ON flight_matrix(watch_id, variant, seen_at);
+
 CREATE TABLE IF NOT EXISTS market_stats (
     route     TEXT NOT NULL,
     pos_code  TEXT NOT NULL,
@@ -254,6 +272,39 @@ def previous_best(watch_id, variant):
                WHERE watch_id=? AND variant=? AND substr(seen_at,1,10)<?""",
             (watch_id, variant, clock.today())).fetchone()
     return r["low"] if r and r["low"] is not None else None
+
+
+def record_matrix(watch_id, variant, itin_key, carrier, rows):
+    """One snapshot: the same flight quoted from every market that
+    priced it this scan. `rows`: [{pos_code, currency, amount_native,
+    amount_sar, stops}]."""
+    now = clock.iso()
+    with conn() as c:
+        for r in rows:
+            c.execute(
+                """INSERT INTO flight_matrix
+                   (watch_id,variant,itin_key,carrier,stops,pos_code,
+                    currency,amount_native,amount_sar,seen_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (watch_id, variant, itin_key, carrier, r.get("stops"),
+                 r["pos_code"], r["currency"], r["amount_native"],
+                 r["amount_sar"], now))
+
+
+def latest_matrix(watch_id, variant):
+    """Rows of the most recent same-flight snapshot, cheapest first."""
+    with conn() as c:
+        r = c.execute(
+            """SELECT MAX(seen_at) m FROM flight_matrix
+               WHERE watch_id=? AND variant=?""",
+            (watch_id, variant)).fetchone()
+        if not r or not r["m"]:
+            return []
+        return [dict(x) for x in c.execute(
+            """SELECT * FROM flight_matrix
+               WHERE watch_id=? AND variant=? AND seen_at=?
+               ORDER BY amount_sar ASC""",
+            (watch_id, variant, r["m"]))]
 
 
 # ---------- market pruning ----------

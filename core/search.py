@@ -139,9 +139,8 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                 for f in as_completed(futs):
                     p2 += f.result()
 
-        merged = registry.merge(
-            compare.rank(compare.apply_filters(p1 + p2, watch), rates),
-            product)
+        ranked = compare.rank(compare.apply_filters(p1 + p2, watch), rates)
+        merged = registry.merge(ranked, product)
         merged = sorted(merged, key=lambda x: (not x["clean"], x["sar_est"]))
         if not merged:
             continue
@@ -174,10 +173,46 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                             if o["pos"]["code"] == "SA"),
                            key=lambda x: x["sar_est"])
             db.record(watch["id"], product, variant, sa_offer)
+        # same flight, every market: keep each market's quote for the
+        # winning itinerary so the dashboard can show them side by side
+        if product == "flight":
+            _record_matrix(watch, variant, best, ranked)
+
         best["alternatives"] = merged[1:4]
         results.append(best)
 
     return results
+
+
+def _record_matrix(watch, variant, best, ranked):
+    """For the winning itinerary (same flight numbers + departure times),
+    record the cheapest quote from each market that priced it."""
+    keyfn = registry.KEYFN["flight"]
+    try:
+        key = keyfn(best)
+    except Exception:
+        return
+    if not key:
+        return
+    by_pos = {}
+    for o in ranked:
+        try:
+            if keyfn(o) != key:
+                continue
+        except Exception:
+            continue
+        pc = o["pos"]["code"]
+        cur = by_pos.get(pc)
+        if cur is None or o["sar_est"] < cur["sar_est"]:
+            by_pos[pc] = o
+    if len(by_pos) < 2:
+        return
+    label = "+".join(s.get("flight", "?") for s in best.get("segments", []))
+    db.record_matrix(
+        watch["id"], variant, label, best.get("carrier"),
+        [{"pos_code": pc, "currency": o["currency"],
+          "amount_native": o["amount"], "amount_sar": o["sar_est"],
+          "stops": o.get("stops")} for pc, o in by_pos.items()])
 
 
 def _detail(o):
