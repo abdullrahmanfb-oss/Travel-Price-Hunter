@@ -218,9 +218,9 @@ def _card(c, idx):
 
 def _gap_table(gaps, threshold):
     if not gaps:
-        return ('<p class="empty">No cross-market data yet — gaps '
-                'appear once a scan has both an SA sample and a cheaper '
-                'market.</p>')
+        return ('<p class="empty">No cross-market data yet. Once scans '
+                'run, each watch shows its best price anywhere next to '
+                'the SA price for the same thing.</p>')
     rows = []
     for g in sorted(gaps, key=lambda x: -x["gap"]):
         flag = ('<span class="badge b-accent">⚑ flagged</span>'
@@ -240,7 +240,8 @@ def _gap_table(gaps, threshold):
 
 def _wins_table(wins):
     if not wins:
-        return '<p class="empty">No scans recorded yet.</p>'
+        return ('<p class="empty">No scans recorded yet — this fills in '
+                'once watches exist and scans run.</p>')
     rows = "".join(
         f'<tr><td>{_e(r["watch_id"])}</td><td>{_e(r["variant"])}</td>'
         f'<td>{_e(r["pos_code"])}</td>'
@@ -288,7 +289,10 @@ def render(cfg=None) -> str:
     action = (f'<section class="action"><h2>Action</h2>'
               f'<ul>{alert_items}</ul></section>') if n_alerts else ""
     cards = "".join(_card(c, i) for i, c in enumerate(d["cards"])) or \
-        '<p class="empty">No priced watches yet — run a scan.</p>'
+        ('<p class="empty">Nothing is tracked. Add a watch with your own '
+         'route and dates:<br><code>python hunt.py flight &lt;id&gt; '
+         '--slice ORIGIN:DEST:YYYY-MM-DD</code> — then '
+         '<code>python hunt.py scan</code>.</p>')
     n_panels = sum(len(c["panels"]) for c in d["cards"])
 
     return f'''<title>Fare Hunter</title>
@@ -394,7 +398,10 @@ h2 { font: 600 13px/1 "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
   margin: 0 0 10px; }
 .note { color: var(--ink-3); font-size: 13px; margin: -4px 0 10px;
   max-width: 62ch; }
-.empty { color: var(--ink-3); font-size: 14px; }
+.empty { color: var(--ink-3); font-size: 14px; line-height: 2; }
+.empty code { font: 12.5px "IBM Plex Mono", monospace;
+  background: var(--accent-soft); color: var(--ink-2);
+  padding: 2px 6px; border-radius: 4px; }
 
 .action { background: var(--good-soft); border: 1px solid var(--good);
   border-radius: 8px; padding: 12px 18px; }

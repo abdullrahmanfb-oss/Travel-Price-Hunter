@@ -16,27 +16,23 @@ Multi-provider, 28 markets, one daily digest. **No card stored or charged.**
     export SMTP_PASS=...                 # Gmail App Password
 
 ## Use
-    # round trip, flexible 3 days
-    python hunt.py flight lisbon --slice RUH:LIS:2026-10-05 \
-        --slice LIS:RUH:2026-10-12 --flex 3 --adults 2 \
+Nothing is tracked until you add a watch. Fill in your own airports,
+cities and dates:
+
+    # round trip, flexible 3 days (repeat --slice; 1 = one-way, 3+ = multi-city)
+    python hunt.py flight <id> --slice ORIGIN:DEST:2026-10-05 \
+        --slice DEST:ORIGIN:2026-10-12 --flex 3 --adults 2 \
         --target-eco 2800 --target-biz 9500 --max-stops 1
 
-    # multi-city
-    python hunt.py flight tour --slice RUH:IST:2026-11-01 \
-        --slice IST:VIE:2026-11-05 --slice VIE:RUH:2026-11-10
-
-    # one-way
-    python hunt.py flight dxb --slice RUH:DXB:2026-09-15
-
-    python hunt.py hotel almaty --city ALA --checkin 2026-09-28 \
+    python hunt.py hotel <id> --city CITYCODE --checkin 2026-09-28 \
         --checkout 2026-10-03 --adults 2 --target 2400 --refundable-only
 
-    python hunt.py car almaty-car --pickup ALA \
+    python hunt.py car <id> --pickup LOCATION \
         --from-time 2026-09-29T10:00 --to-time 2026-10-06T10:00 --target 900
 
     python hunt.py digest --dry-run
     python hunt.py providers          # who's active, who's winning
-    python hunt.py markets RUH-LIS-RUH
+    python hunt.py markets <route>    # e.g. ORIGIN-DEST-ORIGIN
     python hunt.py serve              # live dashboard on http://localhost:8787
     python hunt.py dashboard          # static export to dashboard.html
 

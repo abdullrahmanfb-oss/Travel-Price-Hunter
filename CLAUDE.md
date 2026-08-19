@@ -45,8 +45,11 @@ web/dashboard.py   self-contained HTML dashboard (hunt.py serve | dashboard)
   price. Don't "optimise" that sort away.
 
 ## Testing without keys
-`python simulate.py` seeds 31 days across 6 watch/cabin pairs and prints
-the digest. Use it to verify any change to compare.py or digest.py.
+`python simulate.py` seeds 31 days of fictional sample data across 6
+watch/cabin pairs and prints the digest. It runs against a throwaway
+sandbox DB in the system temp dir (`db.use(...)`) and must NEVER touch
+hunter.db — the real watch list stays empty until the user adds a watch.
+Use it to verify any change to compare.py or digest.py.
 
 ## v3 additions
 - Products: flight | hotel | car. `watches.product` switches behaviour.

@@ -3,21 +3,23 @@
 Fare Hunter - flights (one-way/round/multi-city), hotels, car rental.
 Multi-provider, multi-market, daily digest. Never stores or charges a card.
 
-  python hunt.py flight lisbon --slice RUH:LIS:2026-10-05 \
-      --slice LIS:RUH:2026-10-12 --flex 3 --adults 2 \
-      --target-eco 2800 --target-biz 9500
+Nothing is tracked until YOU add a watch. Fill in your own airports,
+cities and dates:
 
-  python hunt.py flight tour --slice RUH:IST:2026-11-01 \
-      --slice IST:VIE:2026-11-05 --slice VIE:RUH:2026-11-10   # multi-city
+  python hunt.py flight <id> --slice ORIGIN:DEST:YYYY-MM-DD \
+      [--slice DEST:ORIGIN:YYYY-MM-DD]... [--flex N] [--adults N] \
+      [--target-eco SAR] [--target-biz SAR] [--max-stops N]
+      # 1 slice = one-way, 2 = round trip, 3+ = multi-city
 
-  python hunt.py hotel almaty --city ALA --checkin 2026-09-28 \
-      --checkout 2026-10-03 --adults 2 --target 2400
+  python hunt.py hotel <id> --city CITYCODE --checkin YYYY-MM-DD \
+      --checkout YYYY-MM-DD [--adults N] [--target SAR] [--refundable-only]
 
-  python hunt.py car almaty-car --pickup ALA \
-      --from-time 2026-09-29T10:00 --to-time 2026-10-06T10:00 --target 900
+  python hunt.py car <id> --pickup LOCATION \
+      --from-time YYYY-MM-DDTHH:MM --to-time YYYY-MM-DDTHH:MM [--target SAR]
 
   python hunt.py list | scan | digest [--dry-run] | markets <route>
-                     | providers | pause <id> | resume <id> | remove <id>
+                     | providers | serve | dashboard
+                     | pause <id> | resume <id> | remove <id>
 """
 import argparse
 import json

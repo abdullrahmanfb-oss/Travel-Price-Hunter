@@ -1,12 +1,20 @@
 """SQLite store: watches (flight/hotel/car), history, market stats, holds."""
 import json
+import os
 import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
 from core import clock
 
-DB = Path(__file__).parent / "hunter.db"
+DB = Path(os.environ.get("HUNTER_DB",
+                         Path(__file__).resolve().parent.parent / "hunter.db"))
+
+
+def use(path):
+    """Point the store somewhere else (e.g. simulate.py's sandbox DB)."""
+    global DB
+    DB = Path(path)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS watches (
