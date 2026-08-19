@@ -156,6 +156,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         edge = round((sa_ref - best["sar_est"]) / sa_ref * 100, 1) \
             if sa_ref else 0.0
         best["market_edge_pct"] = edge
+        best["sa_ref_sar"] = sa_ref
 
         for pos in warm:
             db.bump_market(route, pos["code"],
@@ -165,6 +166,14 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             db.bump_provider(route, pr.NAME, won=(pr.NAME == best["provider"]))
 
         db.record(watch["id"], product, variant, best)
+        # Also record the SA reference sample when SA didn't win, so the
+        # dashboard's Saudi-gap view stays live even on routes where the
+        # home market never produces the best price.
+        if sa_ref is not None and best["pos"]["code"] != "SA":
+            sa_offer = min((o for o in merged
+                            if o["pos"]["code"] == "SA"),
+                           key=lambda x: x["sar_est"])
+            db.record(watch["id"], product, variant, sa_offer)
         best["alternatives"] = merged[1:4]
         results.append(best)
 

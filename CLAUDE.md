@@ -16,6 +16,7 @@ core/
   clock.py         all time goes through here (tz-aware UTC)
 storage/db.py      watches, price_history, market_stats, holds
 providers/duffel.py  search + hold orders
+web/dashboard.py   self-contained HTML dashboard (hunt.py serve | dashboard)
 ```
 
 ## Hard rules
@@ -59,3 +60,9 @@ the digest. Use it to verify any change to compare.py or digest.py.
 - `bump_market` stamps `last_probe` on every scan. Removing that makes
   newly-cold markets look instantly overdue and pruning stops working.
 - Never claim a non-bookable provider can hold. `BOOKABLE` gates it.
+- Saudi gap: offers beating the SA price by `alerts.market_edge_pct`
+  (config.yaml) get `⚑ CHEAPER ABROAD` in digest + dashboard. Scans record
+  an SA reference sample when SA doesn't win — without it the dashboard
+  gap goes blind on routes SA never wins. `db.latest` returns the
+  cheapest row of the latest day, NOT the newest row, because of those
+  reference samples; `db.market_wins` likewise counts only daily lows.

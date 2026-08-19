@@ -54,21 +54,28 @@ def seed():
         db.add_watch(w)
     now = clock.now()
     prods = {w["id"]: w["product"] for w in db.list_watches()}
+    ins = """INSERT INTO price_history
+      (watch_id,product,variant,provider,pos_code,currency,
+       amount_native,amount_sar,label,detail,source_count,flags,
+       offer_id,seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     for (wid,var),base in BASE.items():
         for d in range(30,-1,-1):
             mult = 1 + (END[(wid,var)]-1)*(((30-d)/30)**2)
             price = base*mult*random.uniform(0.97,1.04)
-            code,cur,fx = random.choice(MKT)
+            # lisbon/business demos the Saudi-gap flag: best price always
+            # found abroad, plus a same-day SA sample filed ~55% higher
+            gap_demo = (wid,var)==("lisbon","business")
+            code,cur,fx = random.choice(MKT[1:] if gap_demo else MKT)
             prod = prods[wid]
+            seen = (now-timedelta(days=d)).isoformat()
             with db.conn() as c:
-                c.execute("""INSERT INTO price_history
-                  (watch_id,product,variant,provider,pos_code,currency,
-                   amount_native,amount_sar,label,detail,source_count,flags,
-                   offer_id,seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (wid,prod,var,random.choice(PROV[prod]),code,cur,
-                   round(price*fx,2),round(price,2),"Sim",
-                   "{}",random.randint(1,3),"",f"o{d}",
-                   (now-timedelta(days=d)).isoformat()))
+                c.execute(ins,(wid,prod,var,random.choice(PROV[prod]),
+                   code,cur,round(price*fx,2),round(price,2),"Sim","{}",
+                   random.randint(1,3),"",f"o{d}",seen))
+                if gap_demo:
+                    c.execute(ins,(wid,prod,var,"duffel","SA","SAR",
+                       round(price*1.55,2),round(price*1.55,2),"Sim","{}",
+                       1,"",f"sa{d}",seen))
 
 def today_best():
     out={}
@@ -79,6 +86,13 @@ def today_best():
           GROUP BY watch_id,variant""",(clock.today(),)).fetchall()
     for r in rows:
         kind=r["product"]
+        # same SA-gap computation production search.py uses
+        sa = db.latest_for_pos(r["watch_id"], r["variant"], "SA", days=7)
+        if sa and r["pos_code"]!="SA" and sa["amount_sar"]:
+            sa_ref = sa["amount_sar"]
+            edge = round((sa_ref-r["sar"])/sa_ref*100, 1)
+        else:
+            edge, sa_ref = 0.0, None
         detail={"stops":1,"dates":["2026-10-05","2026-10-12"],"segments":[]} \
             if kind=="flight" else (
             {"room":"Deluxe King","board":"Breakfast","stars":4,
@@ -92,7 +106,7 @@ def today_best():
             "bookable":r["provider"] in ("duffel","ratehawk"),
             "source_count":r["source_count"],
             "also_seen":["amadeus"] if r["source_count"]>1 else [],
-            "market_edge_pct":round(random.uniform(2,14),1),
+            "market_edge_pct":edge,"sa_ref_sar":sa_ref,
             "alternatives":[]})
     return out
 

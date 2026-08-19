@@ -37,6 +37,8 @@ Multi-provider, 28 markets, one daily digest. **No card stored or charged.**
     python hunt.py digest --dry-run
     python hunt.py providers          # who's active, who's winning
     python hunt.py markets RUH-LIS-RUH
+    python hunt.py serve              # live dashboard on http://localhost:8787
+    python hunt.py dashboard          # static export to dashboard.html
 
 Cron: `0 5 * * * cd ~/fare-hunter && python hunt.py digest >> hunt.log 2>&1`
 
@@ -67,6 +69,20 @@ seasonally, so a market that loses all summer can win in autumn.
 ## Drop thresholds
 economy -8%, business -12%, hotels/cars -7%, measured against the median
 of daily lows (not the last sample). Needs 5 days of history first.
+
+## Saudi price gap
+Any market beating the SA price for the same thing by 25%+ (after SAR
+normalisation, `alerts.market_edge_pct` in config.yaml) is flagged
+`⚑ CHEAPER ABROAD` in the digest and on the dashboard — e.g. 10,000 SAR
+at home, 5,000 SAR bought from Turkey gets flagged at -50%. Scans record
+an SA reference sample whenever SA doesn't win, so the gap stays
+computable from history.
+
+## Dashboard
+`python hunt.py serve` renders straight from hunter.db on every request —
+30-day charts per watch/cabin, target lines, drop/target/gap badges, the
+Saudi-gap table, market wins and holds. `python hunt.py dashboard` writes
+the same page as a single self-contained HTML file.
 
 ## Guards
 - Fares mentioning residency/point-of-sale limits never outrank clean ones

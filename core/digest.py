@@ -20,7 +20,7 @@ def sparkline(values):
                    for v in values)
 
 
-def _offer_block(w, o, variant):
+def _offer_block(w, o, variant, edge_threshold=25.0):
     hist = db.daily_lows(w["id"], variant, 30)
     prev = db.previous_best(w["id"], variant)
     real, why, med = compare.is_real_drop(o["sar_est"], hist, variant)
@@ -30,13 +30,23 @@ def _offer_block(w, o, variant):
     if prev:
         delta = f'  ({o["sar_est"] - prev:+.0f} vs best {prev:.0f})'
 
-    mark, alert = "", None
+    mark, alerts = "", []
     if target and o["sar_est"] <= target:
-        mark = "  \u2605 TARGET"
-        alert = f'{w["id"]} {variant}: {o["sar_est"]:.0f} SAR'
+        mark += "  \u2605 TARGET"
+        alerts.append(f'{w["id"]} {variant}: {o["sar_est"]:.0f} SAR')
     elif real:
-        mark = "  \u2193 DROP"
-        alert = f'{w["id"]} {variant}: {why}'
+        mark += "  \u2193 DROP"
+        alerts.append(f'{w["id"]} {variant}: {why}')
+
+    # Saudi price gap: same thing, materially cheaper bought from another
+    # market. Independent of target/drop \u2014 both can fire on one offer.
+    gap = o.get("market_edge_pct") or 0
+    sa_ref = o.get("sa_ref_sar")
+    if sa_ref and gap >= edge_threshold and o["pos"]["code"] != "SA":
+        mark += "  \u2691 CHEAPER ABROAD"
+        alerts.append(
+            f'{w["id"]} {variant}: {o["sar_est"]:.0f} SAR via {o["pos"]["code"]}'
+            f' vs {sa_ref:.0f} SAR in SA (-{gap:.0f}%)')
 
     src = o["provider"]
     if o.get("also_seen"):
@@ -74,10 +84,11 @@ def _offer_block(w, o, variant):
         lines.append(f'            alt: {alt["sar_est"]:>7.0f} SAR  '
                      f'{compare.label_of(alt) or ""} via {alt["provider"]}'
                      f'/{alt["pos"]["code"]}')
-    return "\n".join(lines) + "\n", alert
+    return "\n".join(lines) + "\n", alerts
 
 
-def build(results_by_watch, watches_list):
+def build(results_by_watch, watches_list, cfg=None):
+    edge_threshold = (cfg or {}).get("alerts", {}).get("market_edge_pct", 25)
     head = [f"FARE HUNTER \u2014 {clock.now():%a %d %b %Y}", ""]
     alerts, body = [], []
 
@@ -89,10 +100,10 @@ def build(results_by_watch, watches_list):
             continue
         body.append(title)
         for o in offers:
-            block, alert = _offer_block(w, o, o["variant"])
+            block, offer_alerts = _offer_block(w, o, o["variant"],
+                                               edge_threshold)
             body.append(block)
-            if alert:
-                alerts.append(alert)
+            alerts += offer_alerts
         body.append("")
 
     if alerts:

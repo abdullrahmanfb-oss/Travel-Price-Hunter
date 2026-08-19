@@ -172,7 +172,7 @@ def cmd_scan(a):
 def cmd_digest(a):
     if db.digest_sent_today() and not a.force:
         return print("already sent today (use --force)")
-    body, alerts = digest.build(cmd_scan(a), db.list_watches())
+    body, alerts = digest.build(cmd_scan(a), db.list_watches(), CFG)
     subj = "[Fare Hunter] * target hit" if alerts else "[Fare Hunter] daily digest"
     if a.dry_run:
         return print("\n" + "=" * 66 + "\n" + body)
@@ -210,6 +210,34 @@ def cmd_providers(a):
         for r in rows:
             print(f'{r["route"]:<16}{r["provider"]:<16}{r["scans"]:>7}'
                   f'{r["wins"]:>6}{r["errors"]:>6}')
+
+
+def cmd_dashboard(a):
+    from web import dashboard
+    out = Path(a.out)
+    out.write_text(dashboard.render(CFG))
+    print(f"wrote {out}  (open it in a browser)")
+
+
+def cmd_serve(a):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from web import dashboard
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = dashboard.render(CFG).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    print(f"dashboard live on http://localhost:{a.port}  (Ctrl-C to stop)")
+    HTTPServer(("", a.port), Handler).serve_forever()
 
 
 def cmd_holds(a):
@@ -264,6 +292,14 @@ def main():
     sub.add_parser("scan").set_defaults(func=cmd_scan)
     sub.add_parser("providers").set_defaults(func=cmd_providers)
     sub.add_parser("holds").set_defaults(func=cmd_holds)
+
+    sv = sub.add_parser("serve")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.set_defaults(func=cmd_serve)
+
+    dash = sub.add_parser("dashboard")
+    dash.add_argument("--out", default="dashboard.html")
+    dash.set_defaults(func=cmd_dashboard)
 
     d = sub.add_parser("digest")
     d.add_argument("--dry-run", action="store_true")

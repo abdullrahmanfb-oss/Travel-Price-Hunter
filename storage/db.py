@@ -174,6 +174,56 @@ def daily_lows(watch_id, variant, days=30):
                GROUP BY d ORDER BY d""", (watch_id, variant, cutoff))]
 
 
+def latest(watch_id, variant):
+    """Cheapest offer from the most recent day with data.
+    A day can hold reference samples too (e.g. the SA price recorded
+    alongside a cheaper market), so 'newest row' is not 'the best'.
+    """
+    with conn() as c:
+        r = c.execute(
+            """SELECT * FROM price_history WHERE watch_id=? AND variant=?
+               AND substr(seen_at,1,10) =
+                   (SELECT substr(MAX(seen_at),1,10) FROM price_history
+                    WHERE watch_id=? AND variant=?)
+               ORDER BY amount_sar ASC LIMIT 1""",
+            (watch_id, variant, watch_id, variant)).fetchone()
+    return dict(r) if r else None
+
+
+def latest_for_pos(watch_id, variant, pos_code, days=7):
+    """Cheapest sample from the most recent day that has this market."""
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        r = c.execute(
+            """SELECT * FROM price_history
+               WHERE watch_id=? AND variant=? AND pos_code=? AND seen_at>?
+               ORDER BY substr(seen_at,1,10) DESC, amount_sar ASC LIMIT 1""",
+            (watch_id, variant, pos_code, cutoff)).fetchone()
+    return dict(r) if r else None
+
+
+def market_wins(days=30):
+    """How often each market produced the daily low, from history.
+    Counts only rows that WERE the day's low — reference samples
+    (e.g. the SA price recorded alongside a cheaper market) don't count.
+    """
+    cutoff = (clock.now() - timedelta(days=days)).isoformat()
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            """SELECT h.watch_id, h.variant, h.pos_code, COUNT(*) wins,
+                      MIN(h.amount_sar) best_sar
+               FROM price_history h
+               JOIN (SELECT watch_id, variant, substr(seen_at,1,10) d,
+                            MIN(amount_sar) low
+                     FROM price_history WHERE seen_at>?
+                     GROUP BY 1,2,3) m
+                 ON m.watch_id=h.watch_id AND m.variant=h.variant
+                AND substr(h.seen_at,1,10)=m.d AND h.amount_sar=m.low
+               WHERE h.seen_at>?
+               GROUP BY 1,2,3
+               ORDER BY 1,2,4 DESC""", (cutoff, cutoff))]
+
+
 def previous_best(watch_id, variant):
     with conn() as c:
         r = c.execute(

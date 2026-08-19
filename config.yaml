@@ -9,6 +9,12 @@ user:
 digest:
   hour_utc: 5            # matches the cron example in the README
 
+alerts:
+  # Flag an offer when a non-SA market beats the SA price for the same
+  # thing by at least this much (after SAR normalisation). 50% cheaper
+  # abroad => flagged; 10% => info line only.
+  market_edge_pct: 25
+
 search:
   requests_per_minute: 90
   deep_margin: 0.12      # phase-2 entry: within 12% of the leader
