@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  pages: write            # publish the dashboard to GitHub Pages
+  id-token: write
 
 jobs:
   scan:
@@ -40,6 +42,9 @@ jobs:
           DUFFEL_TOKEN: ${{ secrets.DUFFEL_TOKEN }}
           AMADEUS_KEY: ${{ secrets.AMADEUS_KEY }}
           AMADEUS_SECRET: ${{ secrets.AMADEUS_SECRET }}
+          # Set this secret to https://api.amadeus.com once you move your
+          # Amadeus app to production; otherwise the free test host is used.
+          AMADEUS_HOSTNAME: ${{ secrets.AMADEUS_HOSTNAME }}
           KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
@@ -68,3 +73,26 @@ jobs:
         with:
           name: fare-hunter-dashboard
           path: dashboard.html
+
+      # Stage it as a Pages site (index.html) for the deploy job.
+      - name: Stage Pages site
+        run: |
+          mkdir -p site
+          cp dashboard.html site/index.html
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # Publishes the dashboard to a live GitHub Pages URL. Kept separate so a
+  # Pages problem (e.g. not yet enabled) never fails the scan or its log.
+  deploy:
+    needs: scan
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -23,7 +23,10 @@ NAME = "amadeus"
 KIND = "flight"
 BOOKABLE = False          # discovery only; booking needs Enterprise tier
 
-BASE = "https://api.amadeus.com"
+# Free Self-Service keys authenticate against the TEST host; paid
+# production keys use https://api.amadeus.com. Override via env when you
+# graduate to production credentials.
+BASE = os.environ.get("AMADEUS_HOSTNAME") or "https://test.api.amadeus.com"
 CABIN_MAP = {"economy": "ECONOMY", "premium": "PREMIUM_ECONOMY",
              "business": "BUSINESS", "first": "FIRST"}
 
