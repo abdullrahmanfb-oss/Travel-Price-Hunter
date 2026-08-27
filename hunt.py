@@ -168,6 +168,9 @@ def cmd_scan(a):
         for o in found:
             print(f'  {o["variant"]:<9} {o["sar_est"]:>8.0f} SAR  '
                   f'{o.get("label")}  {o["provider"]}/{o["pos"]["code"]}')
+    problems = search.error_summary()
+    if problems:
+        print(f'\n! {problems}')
     return out
 
 
