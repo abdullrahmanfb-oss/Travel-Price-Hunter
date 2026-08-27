@@ -8,6 +8,8 @@ source here supporting `type="hold"` — reserve now, pay later.
 Env: DUFFEL_TOKEN   Docs: https://duffel.com/docs/api
 """
 import os
+import time
+
 import requests
 
 from core import clock
@@ -52,12 +54,32 @@ def search(req: dict) -> list[dict]:
     if req.get("max_stops") == 0:
         payload["data"]["max_connections"] = 0
 
-    r = requests.post(
+    r = _post_with_retry(
         f"{BASE}/air/offer_requests?return_offers=true&supplier_timeout=20000",
-        headers=_headers(), json=payload, timeout=60)
-    r.raise_for_status()
+        payload)
     offers = r.json()["data"].get("offers", [])[:req.get("max_results", 20)]
     return [_normalise(o) for o in offers]
+
+
+def _post_with_retry(url, payload, attempts=3):
+    """Retry a 429 using the server's own Retry-After, then give up and let
+    the caller record the failure. Anything else raises immediately."""
+    delay = 2.0
+    for attempt in range(attempts):
+        r = requests.post(url, headers=_headers(), json=payload, timeout=60)
+        if r.status_code != 429 or attempt == attempts - 1:
+            r.raise_for_status()
+            return r
+        wait = delay
+        retry_after = r.headers.get("Retry-After")
+        if retry_after:
+            try:
+                wait = float(retry_after)
+            except ValueError:
+                pass
+        time.sleep(min(wait, 30.0))
+        delay *= 2
+    raise RuntimeError("unreachable")
 
 
 def _normalise(offer):

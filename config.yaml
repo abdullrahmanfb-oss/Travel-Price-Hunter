@@ -16,10 +16,13 @@ alerts:
   market_edge_pct: 25
 
 search:
-  requests_per_minute: 90
+  # Tuned for free/test provider tiers, which rate-limit hard. The old
+  # 90/min with 6 workers produced ~90% HTTP failures. Raise slowly and
+  # watch the error line printed after a scan.
+  requests_per_minute: 30
   deep_margin: 0.12      # phase-2 entry: within 12% of the leader
   max_deep_combos: 6     # at most 6 (provider, market) pairs get the grid
-  workers: 6
+  workers: 3
 
 # 28 markets. POS/currency are passed as API parameters — the supported
 # path. Every currency here must have an FX rate in hunt.py:fx_rates().

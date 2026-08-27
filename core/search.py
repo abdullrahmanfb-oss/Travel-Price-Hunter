@@ -11,6 +11,7 @@ Cold markets are re-probed on schedule — see db.due_for_reprobe. A market
 pruned in July gets another look in August, because fares are re-filed
 seasonally and permanent pruning loses genuine wins.
 """
+import collections
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,14 +22,26 @@ from storage import db
 
 DEEP_MARGIN = 0.12
 MAX_DEEP_COMBOS = 6
-WORKERS = 6
+WORKERS = 3            # free/test provider tiers punish parallelism
+PER_MINUTE = 30        # conservative default; raise via config once proven
 
 
 class RateLimiter:
-    def __init__(self, per_minute=90):
+    """Global pace-setter shared by every worker thread.
+
+    `back_off()` pushes the next slot out after a 429 so the whole scan
+    slows down together — throttling one thread while the others keep
+    hammering just earns more 429s.
+    """
+
+    def __init__(self, per_minute=PER_MINUTE):
         self.interval = 60.0 / per_minute
         self.lock = threading.Lock()
         self.next_at = 0.0
+
+    def configure(self, per_minute):
+        with self.lock:
+            self.interval = 60.0 / max(1, per_minute)
 
     def wait(self):
         with self.lock:
@@ -38,8 +51,22 @@ class RateLimiter:
                 now = time.monotonic()
             self.next_at = now + self.interval
 
+    def back_off(self, seconds):
+        with self.lock:
+            self.next_at = max(self.next_at, time.monotonic() + seconds)
+
 
 LIMITER = RateLimiter()
+
+# Why calls failed, so a bad scan reports a reason instead of a silent zero.
+ERRORS = collections.Counter()
+
+
+def error_summary(limit=4):
+    if not ERRORS:
+        return ""
+    top = ", ".join(f"{reason} x{n}" for reason, n in ERRORS.most_common(limit))
+    return f"{sum(ERRORS.values())} provider call(s) failed: {top}"
 
 
 def warm_markets(all_pos, route):
@@ -70,11 +97,26 @@ def _build_req(watch, pos, variant, slice_set):
     return base
 
 
+def _reason(exc):
+    """Short, groupable label for an exception — HTTP status when we have
+    one, else the exception class."""
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None):
+        code = resp.status_code
+        return f"HTTP {code} rate-limited" if code == 429 else f"HTTP {code}"
+    return type(exc).__name__
+
+
 def _one(watch, provider, pos, variant, slice_set, route):
     LIMITER.wait()
     try:
         res = provider.search(_build_req(watch, pos, variant, slice_set))
-    except Exception:
+    except Exception as e:
+        reason = _reason(e)
+        ERRORS[f"{provider.NAME}: {reason}"] += 1
+        # A 429 means the whole scan is going too fast, not just this call.
+        if reason.endswith("rate-limited"):
+            LIMITER.back_off(5.0)
         db.bump_provider(route, provider.NAME, error=True)
         return []
     for o in res:
@@ -89,6 +131,10 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
     tune = (cfg or {}).get("search", {})
     deep_margin = tune.get("deep_margin", DEEP_MARGIN)
     max_deep = tune.get("max_deep_combos", MAX_DEEP_COMBOS)
+    # config.yaml was previously read but never applied — these two lines
+    # are what make search.requests_per_minute / workers actually count.
+    LIMITER.configure(tune.get("requests_per_minute", PER_MINUTE))
+    workers = max(1, tune.get("workers", WORKERS))
 
     product = watch["product"]
     route = watches.route_key(watch)
@@ -106,7 +152,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
 
         # ---- phase 1 ----
         p1 = []
-        with ThreadPoolExecutor(WORKERS) as ex:
+        with ThreadPoolExecutor(workers) as ex:
             futs = [ex.submit(_one, watch, pr, pos, variant, probe, route)
                     for pr in providers for pos in warm]
             for f in as_completed(futs):
@@ -132,7 +178,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         # ---- phase 2 ----
         p2 = []
         if len(date_variants) > 1 and product == "flight":
-            with ThreadPoolExecutor(WORKERS) as ex:
+            with ThreadPoolExecutor(workers) as ex:
                 futs = [ex.submit(_one, watch, pr, pos, variant, sv, route)
                         for pr, pos in combos
                         for sv in date_variants if sv != probe]
