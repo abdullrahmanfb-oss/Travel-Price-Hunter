@@ -162,21 +162,22 @@ def _legs(item):
 
 
 def _segment(s):
-    carrier_code = _first(s, "carrier", "carrier_code", "airline",
-                          "marketing_carrier", default="")
-    if isinstance(carrier_code, dict):
-        carrier_code = _first(carrier_code, "iata", "code", default="")
+    """Live segment shape (run #49):
+    marketing_carrier_code, flight_number, operating_carrier_name,
+    departure_airport, departure_time_local/_utc, departure_timezone,
+    arrival_airport, arrival_time_local/_utc, duration_minutes, aircraft.
+    """
+    carrier_code = _first(s, "marketing_carrier_code", "carrier_code",
+                          "carrier", default="")
     number = _first(s, "flight_number", "number", default="")
     return {
-        "from": _first(s, "origin", "from", "departure_airport",
-                       "departure_iata", default=""),
-        "to": _first(s, "destination", "to", "arrival_airport",
-                     "arrival_iata", default=""),
-        # prefer local time — it is what the matrix dedupe key compares
-        "depart": _first(s, "departure_time", "departure_local", "depart",
-                         "departure_at", "departure", default=""),
-        "arrive": _first(s, "arrival_time", "arrival_local", "arrive",
-                         "arrival_at", "arrival", default=""),
+        "from": _first(s, "departure_airport", "origin", default=""),
+        "to": _first(s, "arrival_airport", "destination", default=""),
+        # local time — it is what the matrix dedupe key compares
+        "depart": _first(s, "departure_time_local", "departure_time_utc",
+                         default=""),
+        "arrive": _first(s, "arrival_time_local", "arrival_time_utc",
+                         default=""),
         "flight": f"{carrier_code}{number}".strip(),
     }
 
@@ -184,16 +185,17 @@ def _segment(s):
 def _normalise(item, payload):
     out = blank_flight(NAME, bookable=False)
 
-    # Documented shape: price {amount, currency, status}
+    # Live shape (run #49): price {amount, currency, status}. The request
+    # carries no currency — the market decides it — so the response's own
+    # currency is authoritative and an offer without one is unusable.
     price = _first(item, "price", "total_price", "fare", default={})
     if isinstance(price, dict):
         amount = _first(price, "amount", "total", "value")
-        currency = _first(price, "currency", "currency_code",
-                          default=payload["currency"])
+        currency = _first(price, "currency", "currency_code")
         price_status = _first(price, "status")
     else:
-        amount, currency, price_status = price, payload["currency"], None
-    if amount is None:
+        amount, currency, price_status = price, None, None
+    if amount is None or not currency:
         return None
 
     legs = _legs(item)
@@ -204,22 +206,23 @@ def _normalise(item, payload):
         # stops = worst leg, matching how the other providers report it
         stops = max((len(leg) - 1 for leg in legs), default=0)
 
-    carrier = _first(item, "carrier", "airline", "validating_carrier",
-                     default="")
-    if isinstance(carrier, dict):
-        carrier_name = _first(carrier, "name", "iata", default="")
-        carrier_code = _first(carrier, "iata", "code", default="")
-    else:
-        carrier_name = carrier
-        carrier_code = _first(item, "carrier_code", "airline_code",
-                              default="")
-    if not carrier_code and segs:
-        # fall back to the operating carrier of the first segment
-        carrier_code = "".join(c for c in segs[0]["flight"] if c.isalpha())[:2]
+    # Carrier name lives on the leg object ("outbound": {"carrier": ...}),
+    # not at the top level.
+    outbound = item.get("outbound")
+    carrier_name = (outbound.get("carrier", "")
+                    if isinstance(outbound, dict)
+                    else _first(item, "carrier", "airline", default=""))
+    carrier_code = ""
+    if segs:
+        carrier_code = "".join(c for c in segs[0]["flight"]
+                               if c.isalpha())[:2]
 
     flags = []
     if price_status and str(price_status).lower() not in ("verified", "ok"):
         flags.append(f"price {price_status}")
+    if item.get("requires_self_transfer"):
+        flags.append("self-transfer — missed connection is "
+                     "not airline-protected")
 
     out.update({
         # ignav_id is what the booking-links endpoint takes
