@@ -39,12 +39,28 @@ BOOKABLE = False           # returns a booking link, not a holdable order
 #   one-way         POST /fares/one-way
 #   round trip      POST /fares/round-trip
 #   booking links   POST /fares/booking-links  {"ignav_id": ...}
+#
+# Full request-body params per https://ignav.com/docs/search:
+#   legs (max TWO, chronological — so multi-city is impossible by design),
+#   adults / children / infants_in_seat / infants_on_lap,
+#   cabin_class (economy | premium_economy | business | first),
+#   min_carry_on_bags / min_checked_bags, max_price (market currency),
+#   airlines_include / airlines_exclude,
+#   allow_self_transfer (default true — we keep those, flagged),
+#   market (2-letter pricing locale, default US).
+# There is NO currency param (market decides) and no server-side
+# max_stops — stops are filtered client-side in compare.apply_filters.
 BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
 ONE_WAY_PATH = "/fares/one-way"
 ROUND_TRIP_PATH = "/fares/round-trip"
 
 CABIN_MAP = {"economy": "economy", "premium": "premium_economy",
              "business": "business", "first": "first"}
+
+# Markets Ignav's strict validation rejects outright (HTTP 400 naming
+# `market`), confirmed live in run #52. Skip them here instead of
+# removing them from config.yaml — other providers may still serve them.
+UNSUPPORTED_MARKETS = {"KZ"}
 
 
 def available() -> bool:
@@ -86,13 +102,20 @@ def search(req: dict) -> list[dict]:
     # business | first) — the earlier probe tried `cabin` and was
     # rejected. Returned itineraries stay in the requested bucket per
     # the docs; _normalise double-checks anyway (hard rule 5).
+    market = (req.get("pos_code") or "SA").upper()
+    if market in UNSUPPORTED_MARKETS:
+        return []
+
     payload = {
         "origin": slices[0]["origin"],
         "destination": slices[0]["destination"],
         "departure_date": slices[0]["date"],
-        "market": (req.get("pos_code") or "SA").upper(),
+        "market": market,
         "cabin_class": CABIN_MAP.get(req.get("cabin", "economy"),
                                      "economy"),
+        # Ignav defaults adults to 1 — send it so a 2-adult watch never
+        # silently gets single-passenger pricing.
+        "adults": int(req.get("adults") or 1),
     }
     path = ONE_WAY_PATH
     if len(slices) == 2:
