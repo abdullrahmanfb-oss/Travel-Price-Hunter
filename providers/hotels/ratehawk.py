@@ -2,7 +2,7 @@
 RateHawk (Emerging Travel Group) — hotels. BOOKABLE, and it exposes
 per-market rates directly.
 
-This is the hotel equivalent of what Duffel does for flights: it returns
+This is the hotel equivalent of a direct-contract flight source: it returns
 net rates that genuinely differ by residency/market, and it supports
 booking. Requires a partner account (approval usually takes days, not
 minutes) — so `available()` will return False until you have one, and the

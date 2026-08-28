@@ -1,8 +1,8 @@
 """
 Amadeus Self-Service — flights. PRICE DISCOVERY (not bookable here).
 
-Why this alongside Duffel: Amadeus is a different GDS with different
-airline contracts and different negotiated fares. When Duffel and Amadeus
+Why this alongside Ignav: Amadeus is a different GDS with different
+airline contracts and different negotiated fares. When Ignav and Amadeus
 disagree on the same route, that gap IS the finding — it usually means one
 source has content the other doesn't.
 

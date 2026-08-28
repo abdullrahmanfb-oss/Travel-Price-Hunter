@@ -248,7 +248,7 @@ def _card(c, idx):
     if not panels:
         panels = ('<div class="panel"><p class="empty">Watching — awaiting '
                   'the first scan with prices. Scans need provider '
-                  'credentials (e.g. <code>DUFFEL_TOKEN</code>), then '
+                  'credentials (e.g. <code>IGNAV_TOKEN</code>), then '
                   '<code>python hunt.py scan</code>.</p></div>')
     return f'''<article class="card">
   <header class="card-head">
@@ -370,8 +370,8 @@ def _providers(pv):
 
 def _holds(holds):
     if not holds:
-        return ('<p class="empty">No open holds. When Duffel holds a fare '
-                'it appears here with its pay-by deadline.</p>')
+        return ('<p class="empty">No open holds. A bookable provider can hold '
+                'a fare here with its pay-by deadline.</p>')
     rows = "".join(
         f'<tr><td>{_e(h["booking_reference"])}</td><td>{_e(h["variant"])}</td>'
         f'<td class="num-cell">{h["amount_sar"]:,.0f}</td>'

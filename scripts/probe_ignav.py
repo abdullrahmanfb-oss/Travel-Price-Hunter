@@ -26,7 +26,7 @@ import requests
 
 TOKEN = os.environ.get("IGNAV_TOKEN", "")
 BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
-PATHS = ["/fares", "/search", "/flights"]
+PATHS = ["/fares/round-trip", "/fares/one-way"]
 
 BODY = {
     "origin": "RUH", "destination": "LIS",
@@ -36,20 +36,11 @@ BODY = {
 
 
 def auth_variants(token):
-    """Header/param spellings still untested. Round 1 ruled out plain
-    Bearer and X-Access-Token (401) and X-API-Key (404)."""
+    """Docs specify X-Api-Key; Bearer is documented as also accepted.
+    Both are tried so a failure body identifies which is at fault."""
     return [
-        ("Authorization: raw token", {"Authorization": token}, {}),
-        ("Authorization: Token ...", {"Authorization": f"Token {token}"}, {}),
-        ("Authorization: Key ...", {"Authorization": f"Key {token}"}, {}),
-        ("api-key header", {"api-key": token}, {}),
-        ("apikey header", {"apikey": token}, {}),
-        ("x-ignav-key header", {"x-ignav-key": token}, {}),
-        ("x-api-token header", {"x-api-token": token}, {}),
-        ("query ?api_key=", {}, {"api_key": token}),
-        ("query ?token=", {}, {"token": token}),
-        # re-test Bearer so its body is visible this time
-        ("Bearer (for body)", {"Authorization": f"Bearer {token}"}, {}),
+        ("X-Api-Key (documented)", {"X-Api-Key": token}, {}),
+        ("Authorization: Bearer", {"Authorization": f"Bearer {token}"}, {}),
     ]
 
 

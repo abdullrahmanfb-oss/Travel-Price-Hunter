@@ -25,7 +25,7 @@ END  = {("sample-round","economy"):0.84, ("sample-round","business"):0.97,
         ("sample-hotel","std"):0.90, ("sample-car","std"):0.99}
 MKT = [("SA","SAR",1.0),("TR","TRY",10.81),("IN","INR",22.17),
        ("PL","PLN",1.064),("KZ","KZT",128.2)]
-PROV = {"flight":["duffel","amadeus","kiwi"],
+PROV = {"flight":["ignav","amadeus","kiwi"],
         "hotel":["amadeus-hotels"],"car":["amadeus-cars"]}
 
 # AAA/BBB/CCC are deliberately not real airports — this is sample data.
@@ -87,7 +87,7 @@ def seed():
                    code,cur,round(price*fx,2),round(price,2),"Sample","{}",
                    random.randint(1,3),"",f"o{d}",seen))
                 if gap_demo:
-                    c.execute(ins,(wid,prod,var,"duffel","SA","SAR",
+                    c.execute(ins,(wid,prod,var,"ignav","SA","SAR",
                        round(price*1.55,2),round(price*1.55,2),"Sample","{}",
                        1,"",f"sa{d}",seen))
     # same-flight market matrix demo: one fictional flight (XY123+XY456),
@@ -131,7 +131,7 @@ def today_best():
             "currency":r["currency"],"pos":{"code":r["pos_code"]},
             "provider":r["provider"],"label":"Sample "+kind.title(),
             "kind":kind,"detail":detail,"flags":[],"clean":True,
-            "bookable":r["provider"] in ("duffel","ratehawk"),
+            "bookable":r["provider"] in ("ratehawk",),
             "source_count":r["source_count"],
             "also_seen":["amadeus"] if r["source_count"]>1 else [],
             "market_edge_pct":edge,"sa_ref_sar":sa_ref,

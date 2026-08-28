@@ -33,10 +33,15 @@ NAME = "ignav"
 KIND = "flight"
 BOOKABLE = False           # returns a booking link, not a holdable order
 
-# Confirmed by scripts/probe_ignav.py: api.ignav.com does not resolve;
-# https://ignav.com/api/fares is the live endpoint (returns 401, not 404).
+# Confirmed against the published docs:
+#   base            https://ignav.com/api
+#   auth            X-Api-Key header
+#   one-way         POST /fares/one-way
+#   round trip      POST /fares/round-trip
+#   booking links   POST /fares/booking-links  {"ignav_id": ...}
 BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
-SEARCH_PATH = os.environ.get("IGNAV_SEARCH_PATH") or "/fares"
+ONE_WAY_PATH = "/fares/one-way"
+ROUND_TRIP_PATH = "/fares/round-trip"
 
 CABIN_MAP = {"economy": "economy", "premium": "premium_economy",
              "business": "business", "first": "first"}
@@ -47,7 +52,7 @@ def available() -> bool:
 
 
 def _headers():
-    return {"Authorization": f'Bearer {os.environ["IGNAV_TOKEN"]}',
+    return {"X-Api-Key": os.environ["IGNAV_TOKEN"],
             "Content-Type": "application/json",
             "Accept": "application/json"}
 
@@ -73,8 +78,8 @@ def search(req: dict) -> list[dict]:
     """
     slices = req["slices"]
     if len(slices) > 2:
-        # Multi-city isn't offered; returning [] lets the scan continue
-        # with whatever other providers do support it.
+        # Only one-way and round-trip endpoints exist; returning [] lets
+        # the scan continue with providers that do support multi-city.
         return []
 
     payload = {
@@ -86,12 +91,14 @@ def search(req: dict) -> list[dict]:
         "cabin": CABIN_MAP.get(req.get("cabin", "economy"), "economy"),
         "adults": req.get("adults", 1),
     }
+    path = ONE_WAY_PATH
     if len(slices) == 2:
         payload["return_date"] = slices[1]["date"]
+        path = ROUND_TRIP_PATH
     if req.get("max_stops") is not None:
         payload["max_stops"] = req["max_stops"]
 
-    r = _post_with_retry(f"{BASE}{SEARCH_PATH}", payload)
+    r = _post_with_retry(f"{BASE}{path}", payload)
     data = r.json()
 
     if os.environ.get("IGNAV_DEBUG"):
@@ -132,42 +139,65 @@ def _extract(data):
     return []
 
 
+def _legs(item):
+    """Round trips nest segments under outbound/inbound leg objects;
+    one-ways expose a flat segment list. Return a list of legs, each a
+    list of raw segment dicts."""
+    legs = []
+    for key in ("outbound", "inbound"):
+        leg = item.get(key)
+        if isinstance(leg, dict):
+            legs.append(_first(leg, "segments", "legs", default=[]) or [])
+        elif isinstance(leg, list):
+            legs.append(leg)
+    if legs:
+        return legs
+    flat = _first(item, "segments", "legs", default=[]) or []
+    return [flat] if flat else []
+
+
+def _segment(s):
+    carrier_code = _first(s, "carrier", "carrier_code", "airline",
+                          "marketing_carrier", default="")
+    if isinstance(carrier_code, dict):
+        carrier_code = _first(carrier_code, "iata", "code", default="")
+    number = _first(s, "flight_number", "number", default="")
+    return {
+        "from": _first(s, "origin", "from", "departure_airport",
+                       "departure_iata", default=""),
+        "to": _first(s, "destination", "to", "arrival_airport",
+                     "arrival_iata", default=""),
+        # prefer local time — it is what the matrix dedupe key compares
+        "depart": _first(s, "departure_time", "departure_local", "depart",
+                         "departure_at", "departure", default=""),
+        "arrive": _first(s, "arrival_time", "arrival_local", "arrive",
+                         "arrival_at", "arrival", default=""),
+        "flight": f"{carrier_code}{number}".strip(),
+    }
+
+
 def _normalise(item, payload):
     out = blank_flight(NAME, bookable=False)
 
-    price = _first(item, "price", "total_price", "fare", "amount", default={})
+    # Documented shape: price {amount, currency, status}
+    price = _first(item, "price", "total_price", "fare", default={})
     if isinstance(price, dict):
         amount = _first(price, "amount", "total", "value")
         currency = _first(price, "currency", "currency_code",
                           default=payload["currency"])
+        price_status = _first(price, "status")
     else:
-        amount, currency = price, payload["currency"]
+        amount, currency, price_status = price, payload["currency"], None
     if amount is None:
         return None
 
-    raw_segs = _first(item, "segments", "legs", default=[]) or []
-    segs = []
-    for s in raw_segs:
-        carrier_code = _first(s, "carrier", "airline", "marketing_carrier",
-                              "carrier_code", default="")
-        if isinstance(carrier_code, dict):
-            carrier_code = _first(carrier_code, "iata", "code", default="")
-        number = _first(s, "flight_number", "number", "flight", default="")
-        segs.append({
-            "from": _first(s, "origin", "from", "departure_airport",
-                           default=""),
-            "to": _first(s, "destination", "to", "arrival_airport",
-                         default=""),
-            "depart": _first(s, "departure_time", "depart", "departure_at",
-                             "departure", default=""),
-            "arrive": _first(s, "arrival_time", "arrive", "arrival_at",
-                             "arrival", default=""),
-            "flight": f"{carrier_code}{number}".strip(),
-        })
+    legs = _legs(item)
+    segs = [_segment(s) for leg in legs for s in leg]
 
     stops = _first(item, "stops", "stop_count")
     if stops is None:
-        stops = max(0, len(segs) - 1)
+        # stops = worst leg, matching how the other providers report it
+        stops = max((len(leg) - 1 for leg in legs), default=0)
 
     carrier = _first(item, "carrier", "airline", "validating_carrier",
                      default="")
@@ -177,20 +207,30 @@ def _normalise(item, payload):
     else:
         carrier_name = carrier
         carrier_code = _first(item, "carrier_code", "airline_code",
-                              default=str(carrier)[:2])
+                              default="")
+    if not carrier_code and segs:
+        # fall back to the operating carrier of the first segment
+        carrier_code = "".join(c for c in segs[0]["flight"] if c.isalpha())[:2]
+
+    flags = []
+    if price_status and str(price_status).lower() not in ("verified", "ok"):
+        flags.append(f"price {price_status}")
 
     out.update({
-        "offer_id": str(_first(item, "id", "fare_id", "itinerary_id",
-                               default="")),
+        # ignav_id is what the booking-links endpoint takes
+        "offer_id": str(_first(item, "ignav_id", "id", "fare_id", default="")),
         "amount": float(amount),
         "currency": currency,
         "carrier": carrier_name or carrier_code,
         "carrier_code": (carrier_code or "").upper(),
         "stops": int(stops),
         "segments": segs,
-        "slices": [segs],
+        "slices": [[_segment(s) for s in leg] for leg in legs] or [segs],
+        # Search responses carry no inline URL; booking links are a
+        # separate call keyed on ignav_id.
         "deep_link": _first(item, "booking_url", "deep_link", "link"),
         "market": payload["market"],
+        "flags": flags,
         "conditions_raw": _first(item, "conditions", "fare_rules", default={}),
         "fetched_at": clock.iso(),
     })

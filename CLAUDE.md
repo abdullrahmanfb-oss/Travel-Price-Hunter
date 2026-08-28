@@ -16,7 +16,7 @@ core/
   clock.py         all time goes through here (tz-aware UTC)
   countries.py     POS code -> flag + name; no bare ISO codes in output
 storage/db.py      watches, price_history, market_stats, holds
-providers/duffel.py  search + hold orders
+providers/flights/ignav.py  market-local fares (POS = `market` param)
 web/dashboard.py   self-contained HTML dashboard (hunt.py serve | dashboard)
 ```
 
