@@ -11,12 +11,12 @@ on the itinerary (flight numbers + dates), keep the cheapest, and record
 which other sources also saw it — agreement across sources is a signal the
 price is real rather than a stale cache entry.
 """
-from providers.flights import duffel, amadeus as am_flights, kiwi
+from providers.flights import duffel, amadeus as am_flights, kiwi, ignav
 from providers.hotels import amadeus_hotels, ratehawk
 from providers.cars import amadeus_cars
 
 REGISTRY = {
-    "flight": [duffel, am_flights, kiwi],
+    "flight": [duffel, ignav, am_flights, kiwi],
     "hotel": [amadeus_hotels, ratehawk],
     "car": [amadeus_cars],
 }
