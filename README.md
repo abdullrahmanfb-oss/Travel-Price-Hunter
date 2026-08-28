@@ -8,7 +8,7 @@ Multi-provider, 28 markets, one daily digest. **No card stored or charged.**
     python simulate.py
 
 ## Setup
-    export DUFFEL_TOKEN=...              # duffel.com, free test mode
+    export IGNAV_TOKEN=...               # ignav.com, 1000 free requests
     export AMADEUS_KEY=... AMADEUS_SECRET=...   # free self-service tier
     export KIWI_API_KEY=...              # optional
     export SMTP_FROM=Abdullrahman.fb@gmail.com
@@ -47,7 +47,7 @@ Multi-source is still achieved - just properly:
 
 | Source | Content | Bookable |
 |---|---|---|
-| Duffel | airline NDC direct + GDS | yes - hold orders |
+| Ignav | market-local fares by point of sale | link |
 | Amadeus | different GDS, different contracts | discovery |
 | Kiwi | low-cost carriers, self-transfer routes | link |
 | Amadeus Hotels | hotel rates | discovery |

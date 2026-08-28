@@ -5,18 +5,18 @@ Providers register themselves here. `active(kind)` returns only those with
 credentials present, so a missing RateHawk account degrades the system
 rather than breaking it.
 
-Dedupe matters once you have 3+ flight sources: Duffel and Amadeus will
+Dedupe matters once you have 2+ flight sources: two providers will
 often return the same physical flight at slightly different prices. We key
 on the itinerary (flight numbers + dates), keep the cheapest, and record
 which other sources also saw it — agreement across sources is a signal the
 price is real rather than a stale cache entry.
 """
-from providers.flights import duffel, amadeus as am_flights, kiwi, ignav
+from providers.flights import ignav, amadeus as am_flights, kiwi
 from providers.hotels import amadeus_hotels, ratehawk
 from providers.cars import amadeus_cars
 
 REGISTRY = {
-    "flight": [duffel, ignav, am_flights, kiwi],
+    "flight": [ignav, am_flights, kiwi],
     "hotel": [amadeus_hotels, ratehawk],
     "car": [amadeus_cars],
 }

@@ -4,8 +4,8 @@ Kiwi.com (Tequila) — flights. PRICE DISCOVERY + deep link.
 Why this matters for your use case specifically: Kiwi indexes low-cost
 carriers that never appear in GDS content, and it builds "virtual
 interlining" — self-transfer itineraries stitched from separate tickets.
-Those are frequently the cheapest option on RUH→Europe, and Duffel and
-Amadeus will both miss them entirely.
+Those are frequently the cheapest option on RUH→Europe, and the GDS
+sources will both miss them entirely.
 
 The tradeoff, stated plainly in the digest: self-transfer means if leg one
 is late, leg two is not the airline's problem. `virtual_interline` is

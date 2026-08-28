@@ -1,9 +1,8 @@
 name: Fare Hunter
 
 # Runs from GitHub's own runners, which have unrestricted internet — so
-# the provider APIs (Duffel etc.) are reachable with no allowlist to set.
-# Your DUFFEL_TOKEN lives in the repo's encrypted Actions secrets, never
-# in code or chat.
+# the provider APIs are reachable with no allowlist to set. Your API
+# keys live in the repo's encrypted Actions secrets, never in code or chat.
 on:
   workflow_dispatch:          # the "Run workflow" button (manual)
   schedule:
@@ -49,7 +48,6 @@ jobs:
         env:
           IGNAV_TOKEN: ${{ secrets.IGNAV_TOKEN }}
           IGNAV_DEBUG: "1"
-          DUFFEL_TOKEN: ${{ secrets.DUFFEL_TOKEN }}
           AMADEUS_KEY: ${{ secrets.AMADEUS_KEY }}
           AMADEUS_SECRET: ${{ secrets.AMADEUS_SECRET }}
           # Set this secret to https://api.amadeus.com once you move your

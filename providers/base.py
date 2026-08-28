@@ -1,7 +1,7 @@
 """
 Provider contract.
 
-Every source — Duffel, Amadeus, Kiwi, Travelpayouts, RateHawk, whatever
+Every source — Ignav, Amadeus, Kiwi, Travelpayouts, RateHawk, whatever
 comes next — implements the same three things:
 
     NAME          str
