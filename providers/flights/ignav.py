@@ -39,6 +39,17 @@ BOOKABLE = False           # returns a booking link, not a holdable order
 #   one-way         POST /fares/one-way
 #   round trip      POST /fares/round-trip
 #   booking links   POST /fares/booking-links  {"ignav_id": ...}
+#
+# Full request-body params per https://ignav.com/docs/search:
+#   legs (max TWO, chronological — so multi-city is impossible by design),
+#   adults / children / infants_in_seat / infants_on_lap,
+#   cabin_class (economy | premium_economy | business | first),
+#   min_carry_on_bags / min_checked_bags, max_price (market currency),
+#   airlines_include / airlines_exclude,
+#   allow_self_transfer (default true — we keep those, flagged),
+#   market (2-letter pricing locale, default US).
+# There is NO currency param (market decides) and no server-side
+# max_stops — stops are filtered client-side in compare.apply_filters.
 BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
 ONE_WAY_PATH = "/fares/one-way"
 ROUND_TRIP_PATH = "/fares/round-trip"
@@ -93,6 +104,9 @@ def search(req: dict) -> list[dict]:
         "market": (req.get("pos_code") or "SA").upper(),
         "cabin_class": CABIN_MAP.get(req.get("cabin", "economy"),
                                      "economy"),
+        # Ignav defaults adults to 1 — send it so a 2-adult watch never
+        # silently gets single-passenger pricing.
+        "adults": int(req.get("adults") or 1),
     }
     path = ONE_WAY_PATH
     if len(slices) == 2:

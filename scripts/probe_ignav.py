@@ -30,13 +30,20 @@ MINIMAL = {
     "origin": "RUH", "destination": "LIS",
     "departure_date": "2026-10-08", "return_date": "2026-10-16",
 }
-# candidates in priority order — market matters most
+# candidates in priority order — market matters most.
+# NOTE: every ACCEPTED candidate is a successful (billed) request, so this
+# script is for manual runs only; it is no longer in the scheduled
+# workflow. https://ignav.com/docs/search documents the full body:
+# legs, adults/children/infants_*, cabin_class, min_*_bags, max_price,
+# airlines_include/exclude, allow_self_transfer, market. No currency
+# param exists (market sets the pricing locale) — don't re-probe it.
 CANDIDATES = [
     ("market", "PL"),
     ("cabin_class", "business"),
     ("adults", 2),
-    ("max_stops", 1),
-    ("currency", "SAR"),
+    ("max_stops", 1),          # undocumented — verify the flat endpoints
+    ("allow_self_transfer", False),
+    ("min_checked_bags", 1),
 ]
 
 

@@ -36,13 +36,11 @@ jobs:
           restore-keys: |
             fare-hunter-db-v2-
 
-      # Diagnostics only: prints the live Ignav response shape so the
-      # provider's parser can be pinned down. Never fails the build.
-      - name: Probe Ignav API shape
-        continue-on-error: true
-        env:
-          IGNAV_TOKEN: ${{ secrets.IGNAV_TOKEN }}
-        run: python scripts/probe_ignav.py
+      # The calibration probe (scripts/probe_ignav.py) is deliberately NOT
+      # run here any more: the API is calibrated and each probe run costs
+      # ~5 successful (billed) requests — on a 4-hour schedule that alone
+      # would burn ~900 of the 1,000 free requests per month. Run it
+      # manually if the API shape ever changes.
 
       - name: Scan and report
         env:
