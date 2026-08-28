@@ -33,7 +33,7 @@ MINIMAL = {
 # candidates in priority order — market matters most
 CANDIDATES = [
     ("market", "PL"),
-    ("cabin", "business"),
+    ("cabin_class", "business"),
     ("adults", 2),
     ("max_stops", 1),
     ("currency", "SAR"),

@@ -82,19 +82,17 @@ def search(req: dict) -> list[dict]:
         # the scan continue with providers that do support multi-city.
         return []
 
-    # Validation is strict: an unknown field 400s the whole request (run
-    # #48 rejected 'currency' by name). Until the field-discovery probe
-    # confirms cabin support, only economy is requested — asking for
-    # business and silently receiving economy fares would poison the
-    # business track's separate baseline (hard rule 5).
-    if (req.get("cabin") or "economy") != "economy":
-        return []
-
+    # The cabin parameter is `cabin_class` (economy | premium_economy |
+    # business | first) — the earlier probe tried `cabin` and was
+    # rejected. Returned itineraries stay in the requested bucket per
+    # the docs; _normalise double-checks anyway (hard rule 5).
     payload = {
         "origin": slices[0]["origin"],
         "destination": slices[0]["destination"],
         "departure_date": slices[0]["date"],
         "market": (req.get("pos_code") or "SA").upper(),
+        "cabin_class": CABIN_MAP.get(req.get("cabin", "economy"),
+                                     "economy"),
     }
     path = ONE_WAY_PATH
     if len(slices) == 2:
@@ -196,6 +194,12 @@ def _normalise(item, payload):
     else:
         amount, currency, price_status = price, None, None
     if amount is None or not currency:
+        return None
+
+    # Never let one cabin's fare leak into another's baseline (rule 5).
+    want = payload.get("cabin_class")
+    got = item.get("cabin_class")
+    if want and got and got != want:
         return None
 
     legs = _legs(item)
