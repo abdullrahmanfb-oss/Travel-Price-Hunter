@@ -33,8 +33,10 @@ NAME = "ignav"
 KIND = "flight"
 BOOKABLE = False           # returns a booking link, not a holdable order
 
-BASE = os.environ.get("IGNAV_BASE") or "https://api.ignav.com"
-SEARCH_PATH = os.environ.get("IGNAV_SEARCH_PATH") or "/v1/fares"
+# Confirmed by scripts/probe_ignav.py: api.ignav.com does not resolve;
+# https://ignav.com/api/fares is the live endpoint (returns 401, not 404).
+BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
+SEARCH_PATH = os.environ.get("IGNAV_SEARCH_PATH") or "/fares"
 
 CABIN_MAP = {"economy": "economy", "premium": "premium_economy",
              "business": "business", "first": "first"}
