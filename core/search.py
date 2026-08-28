@@ -124,6 +124,10 @@ def _one(watch, provider, pos, variant, slice_set, route):
         res = provider.search(_build_req(watch, pos, variant, slice_set))
     except Exception as e:
         reason = _reason(e)
+        # a 400 is usually market-specific — name the market so one bad
+        # POS code identifies itself instead of hiding in an aggregate
+        if reason.startswith("HTTP 400"):
+            reason += f" pos={pos['code']}"
         ERRORS[f"{provider.NAME}: {reason}"] += 1
         # A 429 means the whole scan is going too fast, not just this call.
         if reason.endswith("rate-limited"):

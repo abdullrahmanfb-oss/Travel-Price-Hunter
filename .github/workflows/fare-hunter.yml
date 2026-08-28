@@ -32,9 +32,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: hunter.db
-          key: fare-hunter-db-${{ github.run_id }}
+          key: fare-hunter-db-v2-${{ github.run_id }}
           restore-keys: |
-            fare-hunter-db-
+            fare-hunter-db-v2-
 
       # Diagnostics only: prints the live Ignav response shape so the
       # provider's parser can be pinned down. Never fails the build.
