@@ -37,8 +37,18 @@ jobs:
           restore-keys: |
             fare-hunter-db-
 
+      # Diagnostics only: prints the live Ignav response shape so the
+      # provider's parser can be pinned down. Never fails the build.
+      - name: Probe Ignav API shape
+        continue-on-error: true
+        env:
+          IGNAV_TOKEN: ${{ secrets.IGNAV_TOKEN }}
+        run: python scripts/probe_ignav.py
+
       - name: Scan and report
         env:
+          IGNAV_TOKEN: ${{ secrets.IGNAV_TOKEN }}
+          IGNAV_DEBUG: "1"
           DUFFEL_TOKEN: ${{ secrets.DUFFEL_TOKEN }}
           AMADEUS_KEY: ${{ secrets.AMADEUS_KEY }}
           AMADEUS_SECRET: ${{ secrets.AMADEUS_SECRET }}
