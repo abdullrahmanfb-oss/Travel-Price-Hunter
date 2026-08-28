@@ -82,21 +82,26 @@ def search(req: dict) -> list[dict]:
         # the scan continue with providers that do support multi-city.
         return []
 
+    # Validation is strict: an unknown field 400s the whole request (run
+    # #48 rejected 'currency' by name). Until the field-discovery probe
+    # confirms cabin support, only economy is requested — asking for
+    # business and silently receiving economy fares would poison the
+    # business track's separate baseline (hard rule 5).
+    if (req.get("cabin") or "economy") != "economy":
+        return []
+
     payload = {
         "origin": slices[0]["origin"],
         "destination": slices[0]["destination"],
         "departure_date": slices[0]["date"],
         "market": (req.get("pos_code") or "SA").upper(),
-        "currency": req.get("currency", "SAR"),
-        "cabin": CABIN_MAP.get(req.get("cabin", "economy"), "economy"),
-        "adults": req.get("adults", 1),
     }
     path = ONE_WAY_PATH
     if len(slices) == 2:
         payload["return_date"] = slices[1]["date"]
         path = ROUND_TRIP_PATH
-    if req.get("max_stops") is not None:
-        payload["max_stops"] = req["max_stops"]
+    # max_stops is not sent either — compare.apply_filters() already
+    # enforces the stop limit client-side on every offer.
 
     r = _post_with_retry(f"{BASE}{path}", payload)
     data = r.json()

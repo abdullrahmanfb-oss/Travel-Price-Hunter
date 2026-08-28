@@ -1,47 +1,50 @@
 #!/usr/bin/env python3
 """
-Calibration probe for the Ignav API — round 2.
+Calibration probe for the Ignav API — round 3: field discovery.
 
-Round 1 established:
-  * api.ignav.com does not resolve (ConnectionError on every path)
-  * https://ignav.com/api/fares EXISTS — it answered 401, not 404
+Round 2 established (run #48):
+  * X-Api-Key authenticates (Bearer does NOT — 'api_key_required')
+  * POST /fares/round-trip and /fares/one-way are the endpoints
+  * validation is strict and names ONE offending field per response:
+      round-trip rejected 'currency'; one-way rejected 'return_date'
 
-So the endpoint is known and the open question is authentication. This
-round targets only the confirmed URL, tries the remaining plausible auth
-schemes, and — the important part — PRINTS THE RESPONSE BODY, which
-normally names the exact problem ("invalid api key", "missing header").
+So this round starts from a minimal body and adds candidate fields one
+request at a time, recording which are accepted and which are rejected,
+then prints the response structure of the final successful call.
 
-It is diagnostics only and never fails the build.
+Failed requests do not count against the free quota (only successful
+responses are billed), so this discovery is cheap.
 
 Run:  IGNAV_TOKEN=... python scripts/probe_ignav.py
 """
 import json
 import os
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 
 TOKEN = os.environ.get("IGNAV_TOKEN", "")
 BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
-PATHS = ["/fares/round-trip", "/fares/one-way"]
 
-BODY = {
+MINIMAL = {
     "origin": "RUH", "destination": "LIS",
     "departure_date": "2026-10-08", "return_date": "2026-10-16",
-    "market": "SA", "currency": "SAR", "cabin": "economy", "adults": 1,
 }
+# candidates in priority order — market matters most
+CANDIDATES = [
+    ("market", "PL"),
+    ("cabin", "business"),
+    ("adults", 2),
+    ("max_stops", 1),
+    ("currency", "SAR"),
+]
 
 
-def auth_variants(token):
-    """Docs specify X-Api-Key; Bearer is documented as also accepted.
-    Both are tried so a failure body identifies which is at fault."""
-    return [
-        ("X-Api-Key (documented)", {"X-Api-Key": token}, {}),
-        ("Authorization: Bearer", {"Authorization": f"Bearer {token}"}, {}),
-    ]
+def post(url, body):
+    return requests.post(url, json=body, timeout=25,
+                         headers={"X-Api-Key": TOKEN,
+                                  "Content-Type": "application/json",
+                                  "Accept": "application/json"})
 
 
 def shape(obj, depth=0):
@@ -56,60 +59,48 @@ def shape(obj, depth=0):
     return type(obj).__name__
 
 
-def report_success(label, method, url, r):
-    print(f"\n*** SUCCESS: {label} {method} {url}\n")
-    try:
-        data = r.json()
-    except ValueError:
-        print("non-JSON body:", r.text[:800])
-        return
-    print("STRUCTURE:")
-    print(json.dumps(shape(data), indent=2)[:3000])
-    print("\nRAW BODY (first 2000 chars):")
-    print(json.dumps(data)[:2000])
-
-
 def main():
     if not TOKEN:
         print("IGNAV_TOKEN not set — skipping probe.")
         return
-    print(f"token: starts {TOKEN[:6]!r}, length {len(TOKEN)}")
-    print(f"base:  {BASE}\n")
+    url = f"{BASE}/fares/round-trip"
+    print(f"target: {url}\n")
 
-    seen_bodies = set()
-    for path in PATHS:
-        url = f"{BASE}{path}"
-        for label, headers, params in auth_variants(TOKEN):
-            hdrs = {**headers, "Content-Type": "application/json",
-                    "Accept": "application/json"}
-            for method in ("POST", "GET"):
-                try:
-                    if method == "POST":
-                        r = requests.post(url, headers=hdrs, json=BODY,
-                                          params=params, timeout=25)
-                    else:
-                        r = requests.get(url, headers=hdrs,
-                                         params={**params, **BODY}, timeout=25)
-                except Exception as e:
-                    print(f"  {method:4} {path:9} {label:24} -> "
-                          f"{type(e).__name__}")
-                    continue
+    r = post(url, MINIMAL)
+    print(f"minimal body -> {r.status_code}")
+    if r.status_code != 200:
+        print("  body:", r.text[:400])
+        print("\nminimal body already rejected — fix that first.")
+        return
 
-                print(f"  {method:4} {path:9} {label:24} -> {r.status_code}")
+    body = dict(MINIMAL)
+    accepted, rejected = [], []
+    last_ok = r
+    for key, val in CANDIDATES:
+        trial = {**body, key: val}
+        r = post(url, trial)
+        if r.status_code == 200:
+            body[key] = val
+            accepted.append(key)
+            last_ok = r
+            print(f"+ {key:10} accepted")
+        else:
+            rejected.append(key)
+            print(f"- {key:10} REJECTED ({r.status_code}): {r.text[:200]}")
 
-                if r.status_code == 200:
-                    report_success(label, method, url, r)
-                    return
+    print(f"\naccepted: {accepted}")
+    print(f"rejected: {rejected}")
+    print(f"final body: {json.dumps(body)}")
 
-                # The body is the whole point of this round. Print each
-                # distinct one once so the output stays readable.
-                body = (r.text or "")[:300].strip()
-                if body and body not in seen_bodies:
-                    seen_bodies.add(body)
-                    print(f"       body: {body}")
-
-    print("\nNo 200 yet. The distinct response bodies above should say "
-          "whether this is an auth-scheme problem or an invalid key.")
+    try:
+        data = last_ok.json()
+    except ValueError:
+        print("non-JSON body:", last_ok.text[:800])
+        return
+    print("\nRESPONSE STRUCTURE:")
+    print(json.dumps(shape(data), indent=2)[:3500])
+    print("\nRAW (first 2500 chars):")
+    print(json.dumps(data)[:2500])
 
 
 if __name__ == "__main__":
