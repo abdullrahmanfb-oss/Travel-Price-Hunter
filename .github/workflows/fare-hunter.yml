@@ -6,7 +6,8 @@ name: Fare Hunter
 on:
   workflow_dispatch:          # the "Run workflow" button (manual)
   schedule:
-    - cron: '19 */4 * * *'    # every 4 hours — only fires from the default branch
+    - cron: '19 9 * * *'      # daily 09:19 UTC ≈ 12:19 PM Riyadh — keeps the
+                              # scan inside Ignav's free 1,000 requests/month
 
 permissions:
   contents: read
