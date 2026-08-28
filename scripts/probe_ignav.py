@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-One-shot calibration probe for the Ignav API.
+Calibration probe for the Ignav API — round 2.
 
-The dev sandbox cannot reach ignav.com, so the provider was written from
-published parameter descriptions rather than a live response. This script
-runs from CI (which does have network), tries the plausible endpoint and
-auth combinations, and prints the structure of the first success.
+Round 1 established:
+  * api.ignav.com does not resolve (ConnectionError on every path)
+  * https://ignav.com/api/fares EXISTS — it answered 401, not 404
 
-Its output is what pins down providers/flights/ignav.py exactly. It never
-fails the build — a probe is diagnostics, not a gate.
+So the endpoint is known and the open question is authentication. This
+round targets only the confirmed URL, tries the remaining plausible auth
+schemes, and — the important part — PRINTS THE RESPONSE BODY, which
+normally names the exact problem ("invalid api key", "missing header").
+
+It is diagnostics only and never fails the build.
 
 Run:  IGNAV_TOKEN=... python scripts/probe_ignav.py
 """
@@ -22,21 +25,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import requests
 
 TOKEN = os.environ.get("IGNAV_TOKEN", "")
-BASES = [os.environ.get("IGNAV_BASE"), "https://api.ignav.com",
-         "https://ignav.com/api"]
-PATHS = ["/v1/fares", "/v1/search", "/fares", "/v1/flights/search",
-         "/v1/round-trip", "/v1/one-way"]
-AUTHS = {
-    "Bearer": lambda t: {"Authorization": f"Bearer {t}"},
-    "X-API-Key": lambda t: {"X-API-Key": t},
-    "X-Access-Token": lambda t: {"X-Access-Token": t},
-}
+BASE = os.environ.get("IGNAV_BASE") or "https://ignav.com/api"
+PATHS = ["/fares", "/search", "/flights"]
 
 BODY = {
     "origin": "RUH", "destination": "LIS",
     "departure_date": "2026-10-08", "return_date": "2026-10-16",
     "market": "SA", "currency": "SAR", "cabin": "economy", "adults": 1,
 }
+
+
+def auth_variants(token):
+    """Header/param spellings still untested. Round 1 ruled out plain
+    Bearer and X-Access-Token (401) and X-API-Key (404)."""
+    return [
+        ("Authorization: raw token", {"Authorization": token}, {}),
+        ("Authorization: Token ...", {"Authorization": f"Token {token}"}, {}),
+        ("Authorization: Key ...", {"Authorization": f"Key {token}"}, {}),
+        ("api-key header", {"api-key": token}, {}),
+        ("apikey header", {"apikey": token}, {}),
+        ("x-ignav-key header", {"x-ignav-key": token}, {}),
+        ("x-api-token header", {"x-api-token": token}, {}),
+        ("query ?api_key=", {}, {"api_key": token}),
+        ("query ?token=", {}, {"token": token}),
+        # re-test Bearer so its body is visible this time
+        ("Bearer (for body)", {"Authorization": f"Bearer {token}"}, {}),
+    ]
 
 
 def shape(obj, depth=0):
@@ -51,51 +65,64 @@ def shape(obj, depth=0):
     return type(obj).__name__
 
 
+def report_success(label, method, url, r):
+    print(f"\n*** SUCCESS: {label} {method} {url}\n")
+    try:
+        data = r.json()
+    except ValueError:
+        print("non-JSON body:", r.text[:800])
+        return
+    print("STRUCTURE:")
+    print(json.dumps(shape(data), indent=2)[:3000])
+    print("\nRAW BODY (first 2000 chars):")
+    print(json.dumps(data)[:2000])
+
+
 def main():
     if not TOKEN:
         print("IGNAV_TOKEN not set — skipping probe.")
         return
-    print(f"token prefix: {TOKEN[:6]}…  len={len(TOKEN)}")
+    print(f"token: starts {TOKEN[:6]!r}, length {len(TOKEN)}")
+    print(f"base:  {BASE}\n")
 
-    tried = []
-    for base in [b for b in BASES if b]:
-        for path in PATHS:
-            for auth_name, auth in AUTHS.items():
-                url = f"{base}{path}"
-                headers = {**auth(TOKEN), "Content-Type": "application/json",
-                           "Accept": "application/json"}
+    seen_bodies = set()
+    for path in PATHS:
+        url = f"{BASE}{path}"
+        for label, headers, params in auth_variants(TOKEN):
+            hdrs = {**headers, "Content-Type": "application/json",
+                    "Accept": "application/json"}
+            for method in ("POST", "GET"):
                 try:
-                    r = requests.post(url, headers=headers, json=BODY,
-                                      timeout=25)
+                    if method == "POST":
+                        r = requests.post(url, headers=hdrs, json=BODY,
+                                          params=params, timeout=25)
+                    else:
+                        r = requests.get(url, headers=hdrs,
+                                         params={**params, **BODY}, timeout=25)
                 except Exception as e:
-                    tried.append(f"{auth_name} POST {url} -> {type(e).__name__}")
+                    print(f"  {method:4} {path:9} {label:24} -> "
+                          f"{type(e).__name__}")
                     continue
-                tried.append(f"{auth_name} POST {url} -> {r.status_code}")
-                if r.status_code == 200:
-                    print(f"\n*** SUCCESS: {auth_name} POST {url}\n")
-                    try:
-                        data = r.json()
-                    except ValueError:
-                        print("non-JSON body:", r.text[:600])
-                        return
-                    print("STRUCTURE:")
-                    print(json.dumps(shape(data), indent=2)[:3000])
-                    print("\nFIRST 1500 CHARS OF RAW BODY:")
-                    print(json.dumps(data)[:1500])
-                    return
-                # A 4xx that isn't auth tells us the path exists but the
-                # body is wrong — that is useful signal, so show it.
-                if r.status_code in (400, 422):
-                    print(f"\n[{r.status_code} at {url} via {auth_name}] "
-                          f"body says: {r.text[:400]}\n")
 
-    print("\nNo combination returned 200. Attempts:")
-    for t in tried:
-        print("  ", t)
+                print(f"  {method:4} {path:9} {label:24} -> {r.status_code}")
+
+                if r.status_code == 200:
+                    report_success(label, method, url, r)
+                    return
+
+                # The body is the whole point of this round. Print each
+                # distinct one once so the output stays readable.
+                body = (r.text or "")[:300].strip()
+                if body and body not in seen_bodies:
+                    seen_bodies.add(body)
+                    print(f"       body: {body}")
+
+    print("\nNo 200 yet. The distinct response bodies above should say "
+          "whether this is an auth-scheme problem or an invalid key.")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:            # never fail the build on diagnostics
+    except Exception as e:            # diagnostics must never gate a scan
         print(f"probe error: {type(e).__name__}: {e}")
