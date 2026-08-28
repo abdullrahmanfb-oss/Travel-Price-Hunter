@@ -57,6 +57,11 @@ ROUND_TRIP_PATH = "/fares/round-trip"
 CABIN_MAP = {"economy": "economy", "premium": "premium_economy",
              "business": "business", "first": "first"}
 
+# Markets Ignav's strict validation rejects outright (HTTP 400 naming
+# `market`), confirmed live in run #52. Skip them here instead of
+# removing them from config.yaml — other providers may still serve them.
+UNSUPPORTED_MARKETS = {"KZ"}
+
 
 def available() -> bool:
     return bool(os.environ.get("IGNAV_TOKEN"))
@@ -97,11 +102,15 @@ def search(req: dict) -> list[dict]:
     # business | first) — the earlier probe tried `cabin` and was
     # rejected. Returned itineraries stay in the requested bucket per
     # the docs; _normalise double-checks anyway (hard rule 5).
+    market = (req.get("pos_code") or "SA").upper()
+    if market in UNSUPPORTED_MARKETS:
+        return []
+
     payload = {
         "origin": slices[0]["origin"],
         "destination": slices[0]["destination"],
         "departure_date": slices[0]["date"],
-        "market": (req.get("pos_code") or "SA").upper(),
+        "market": market,
         "cabin_class": CABIN_MAP.get(req.get("cabin", "economy"),
                                      "economy"),
         # Ignav defaults adults to 1 — send it so a 2-adult watch never
