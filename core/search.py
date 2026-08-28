@@ -99,11 +99,22 @@ def _build_req(watch, pos, variant, slice_set):
 
 def _reason(exc):
     """Short, groupable label for an exception — HTTP status when we have
-    one, else the exception class."""
+    one, else the exception class. A 400's body usually names the bad
+    field or value; surface it so the summary is actionable."""
     resp = getattr(exc, "response", None)
     if resp is not None and getattr(resp, "status_code", None):
         code = resp.status_code
-        return f"HTTP {code} rate-limited" if code == 429 else f"HTTP {code}"
+        if code == 429:
+            return "HTTP 429 rate-limited"
+        if code == 400:
+            try:
+                err = resp.json().get("error", {})
+                detail = err.get("field") or err.get("code")
+                if detail:
+                    return f"HTTP 400 ({detail})"
+            except Exception:
+                pass
+        return f"HTTP {code}"
     return type(exc).__name__
 
 
