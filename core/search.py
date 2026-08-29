@@ -23,6 +23,13 @@ from storage import db
 
 DEEP_MARGIN = 0.12
 MAX_DEEP_COMBOS = 6
+
+# Gulf carriers for the dashboard's "cheapest Gulf airlines" view. A
+# Gulf ticket = itinerary containing at least one of these carriers'
+# segments — pure single-Gulf-carrier itineraries don't exist on many
+# routes (they interline), so "contains" is the workable definition.
+GULF = {"SV", "XY", "F3", "EK", "FZ", "EY", "G9", "QR", "GF", "J9",
+        "KU", "WY"}
 WORKERS = 3            # free/test provider tiers punish parallelism
 PER_MINUTE = 30        # conservative default; raise via config once proven
 
@@ -285,8 +292,10 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             at = clock.iso()
             # headline window: the cheapest way to fly the ROUTE from each
             # market — any airline, any flex date; per-row flight + dates
-            # say what each price is for
-            _record_route_matrix(watch, variant, ranked, at)
+            # say what each price is for. The gulf-any window feeds the
+            # "cheapest Gulf airlines" dashboard view.
+            _record_route_matrix(watch, variant, ranked, at, providers)
+            _record_gulf_matrix(watch, variant, ranked, at, providers)
             recorded = {_record_matrix(watch, variant, best, ranked, at)}
             # Focus carriers (e.g. Saudia): their best itinerary gets its
             # own window even when it never wins. Reuses offers this scan
@@ -329,26 +338,63 @@ def _attach_link(o, providers):
         o["deep_link"], o["link_via"] = res
 
 
-def _record_route_matrix(watch, variant, ranked, at):
-    """Each market's cheapest offer for the route, whatever flight or
-    flex date achieves it — the comparison the user actually shops with."""
+def _seg_carriers(o):
+    """IATA flight designators are a 2-char carrier code + number, and
+    the code itself may contain a digit (A3, W6) — so take the first
+    two characters, never strip digits."""
+    return {(s.get("flight") or "")[:2].upper()
+            for s in o.get("segments", [])
+            if len(s.get("flight") or "") >= 3}
+
+
+def _is_gulf(o):
+    return bool(_seg_carriers(o) & GULF)
+
+
+def _matrix_row(pc, o):
+    return {"pos_code": pc, "currency": o["currency"],
+            "amount_native": o["amount"], "amount_sar": o["sar_est"],
+            "stops": o.get("stops"),
+            "carrier_name": o.get("carrier") or "",
+            "duration_min": o.get("duration_min"),
+            "deep_link": o.get("deep_link"),
+            "flight": "+".join(s.get("flight", "?")
+                               for s in o.get("segments", []))[:48],
+            "dates": "/".join(o.get("dates") or [])}
+
+
+def _record_best_per_market(watch, variant, offers, label, at, providers):
+    """One window: each market's cheapest offer from `offers`. The
+    cheapest row gets a booking link fetched (one billed call) — that's
+    the row the user would actually book."""
     by_pos = {}
-    for o in ranked:
+    for o in offers:
         pc = o["pos"]["code"]
         cur = by_pos.get(pc)
         if cur is None or o["sar_est"] < cur["sar_est"]:
             by_pos[pc] = o
     if not by_pos:
         return
-    db.record_matrix(
-        watch["id"], variant, "cheapest-any", None,
-        [{"pos_code": pc, "currency": o["currency"],
-          "amount_native": o["amount"], "amount_sar": o["sar_est"],
-          "stops": o.get("stops"),
-          "flight": "+".join(s.get("flight", "?")
-                             for s in o.get("segments", []))[:48],
-          "dates": "/".join(o.get("dates") or [])}
-         for pc, o in by_pos.items()], at)
+    best = min(by_pos.values(), key=lambda x: x["sar_est"])
+    _attach_link(best, providers)
+    db.record_matrix(watch["id"], variant, label, None,
+                     [_matrix_row(pc, o) for pc, o in by_pos.items()], at)
+
+
+def _record_route_matrix(watch, variant, ranked, at, providers):
+    """Each market's cheapest offer for the route, whatever flight or
+    flex date achieves it — the comparison the user actually shops with."""
+    _record_best_per_market(watch, variant, ranked, "cheapest-any", at,
+                            providers)
+
+
+def _record_gulf_matrix(watch, variant, ranked, at, providers):
+    """Same, restricted to itineraries containing a Gulf-carrier
+    segment — feeds the dashboard's 'cheapest Gulf airlines' view."""
+    gulf = [o for o in ranked if _is_gulf(o)]
+    if gulf:
+        _record_best_per_market(watch, variant, gulf, "gulf-any", at,
+                                providers)
 
 
 def _record_matrix(watch, variant, best, ranked, at=None,
@@ -402,5 +448,6 @@ def _detail(o):
                 "description": o.get("description")}
     return {"stops": o.get("stops"), "dates": o.get("dates"),
             "segments": o.get("segments", [])[:8],
+            "duration_min": o.get("duration_min"),
             "deep_link": o.get("deep_link"),
             "link_via": o.get("link_via")}
