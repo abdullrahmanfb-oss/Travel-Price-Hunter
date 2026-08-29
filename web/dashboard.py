@@ -11,6 +11,7 @@ business keep separate panels, same as everywhere else in the system.
 """
 import html
 import json
+from urllib.parse import quote_plus
 
 from core import clock, compare, countries, watches
 from providers import registry
@@ -479,11 +480,16 @@ def _row_codes(flight):
 
 def _view_data(cards):
     """Pull the four view row-sets (cheapest-any / gulf-any per cabin)
-    from the latest scan's matrix windows. Rows arrive cheapest-first."""
-    views = {}
+    from the latest scan's matrix windows, plus the watch's route
+    (origin, destination) for fallback search links. Rows arrive
+    cheapest-first."""
+    views, route = {}, (None, None)
     for c in cards:
         if c["watch"]["product"] != "flight":
             continue
+        slices = c["watch"].get("slices") or []
+        if slices:
+            route = (slices[0].get("origin"), slices[0].get("destination"))
         for var, row_lists in c.get("matrix", {}).items():
             for rows in row_lists:
                 key = rows[0]["itin_key"]
@@ -492,10 +498,26 @@ def _view_data(cards):
                 elif key == "gulf-any":
                     views.setdefault(f"gulf-{var}", rows)
         break                      # one flight watch drives the overview
-    return views
+    return views, route
 
 
-def _kpi(view_id, label, row, cabin=""):
+def _gsearch_link(pos, dates, route):
+    """Fallback per-row link when the scan has no exact booking link:
+    Google Flights for the row's dates, priced from the row's country
+    (gl= sets the market — the same point-of-sale lever the scan uses).
+    Constructed locally, so every row can carry it at zero API cost."""
+    origin, dest = route or (None, None)
+    d = (dates or "").split("/")
+    if not origin or not dest or not d or not d[0]:
+        return None
+    q = f"Flights from {origin} to {dest} on {d[0]}"
+    if len(d) > 1 and d[1]:
+        q += f" through {d[1]}"
+    return (f"https://www.google.com/travel/flights?q={quote_plus(q)}"
+            f"&hl=en&gl={(pos or 'sa').lower()}")
+
+
+def _kpi(view_id, label, row, cabin="", route=None):
     if not row:
         return (f'<a class="kpi" href="#{view_id}"><span class="k-lbl">'
                 f'{_e(label)}</span><span class="k-num">—</span>'
@@ -506,6 +528,11 @@ def _kpi(view_id, label, row, cabin=""):
     if row.get("deep_link"):
         book = (f'<span class="k-book" data-href="{_e(row["deep_link"])}">'
                 f'Book ↗</span>')
+    else:
+        gs = _gsearch_link(row.get("pos_code"), row.get("dates"), route)
+        if gs:
+            book = (f'<span class="k-book" data-href="{_e(gs)}">'
+                    f'Search ↗</span>')
     return f'''<a class="kpi" href="#{view_id}">
   <span class="k-lbl">{_e(label)} {cabin_chip}</span>
   <span class="k-num">{row["amount_sar"]:,.0f} <small>SAR</small></span>
@@ -519,7 +546,7 @@ def _kpi(view_id, label, row, cabin=""):
 </a>'''
 
 
-def _kpi_section(views):
+def _kpi_section(views, route=None):
     eco = (views.get("economy") or [None])[0]
     biz = (views.get("business") or [None])[0]
     ge = (views.get("gulf-economy") or [None])[0]
@@ -529,9 +556,9 @@ def _kpi_section(views):
         if cand and (gulf is None or cand["amount_sar"] < gulf["amount_sar"]):
             gulf, gulf_cabin = cand, cab
     return f'''<section class="kpis">
-{_kpi("view-a", "Cheapest economy", eco)}
-{_kpi("view-b", "Cheapest Gulf airlines", gulf, gulf_cabin)}
-{_kpi("view-c", "Cheapest business", biz)}
+{_kpi("view-a", "Cheapest economy", eco, route=route)}
+{_kpi("view-b", "Cheapest Gulf airlines", gulf, gulf_cabin, route=route)}
+{_kpi("view-c", "Cheapest business", biz, route=route)}
 </section>
 <p class="note">Trip totals in SAR, 1 adult, Riyadh ⇄ Lisbon. Tap a card
 for the full per-country view. Travel time is the whole round trip —
@@ -540,7 +567,7 @@ regenerate each scan — open them in a private/incognito window for the
 quoted price.</p>'''
 
 
-def _view_table(rows):
+def _view_table(rows, route=None):
     if not rows:
         return ('<p class="empty">No data in the latest scan for this '
                 'view yet — it fills after the next scan.</p>')
@@ -551,9 +578,14 @@ def _view_table(rows):
     for i, r in enumerate(rows):
         native = "" if r["currency"] == "SAR" else \
             f'<small>{r["amount_native"]:,.0f} {_e(r["currency"])}</small>'
-        book = (f'<a class="booklink" href="{_e(r["deep_link"])}" '
-                f'target="_blank" rel="noopener">Book ↗</a>'
-                if r.get("deep_link") else '<span class="vt-dim">—</span>')
+        if r.get("deep_link"):
+            book = (f'<a class="booklink" href="{_e(r["deep_link"])}" '
+                    f'target="_blank" rel="noopener">Book ↗</a>')
+        else:
+            gs = _gsearch_link(r.get("pos_code"), r.get("dates"), route)
+            book = (f'<a class="booklink alt" href="{_e(gs)}" '
+                    f'target="_blank" rel="noopener">Search ↗</a>'
+                    if gs else '<span class="vt-dim">—</span>')
         chips = '<span class="badge b-good">cheapest</span>' if i == 0 else \
             ('<span class="badge b-muted">home</span>'
              if r["pos_code"] == "SA" else "")
@@ -602,6 +634,7 @@ def _filter_bar(views):
         f'{_e(AIRLINE_NAMES.get(c, c))}</button>'
         for c in sorted(codes, key=lambda c: AIRLINE_NAMES.get(c, c)))
     return f'''<div class="filterbar">
+  <div class="fbar-title">Filter &amp; sort tickets</div>
   <div class="fgroup"><span class="flbl">Sort</span>
     <button class="fbtn sortbtn active" data-sort="sar">Cheapest</button>
     <button class="fbtn sortbtn" data-sort="dur">Shortest trip</button>
@@ -619,13 +652,13 @@ def _filter_bar(views):
 </div>'''
 
 
-def _views_section(views):
-    a = _view_table(views.get("economy"))
+def _views_section(views, route=None):
+    a = _view_table(views.get("economy"), route)
     b = (f'<h3 class="vt-sub">Economy</h3>'
-         f'{_view_table(views.get("gulf-economy"))}'
+         f'{_view_table(views.get("gulf-economy"), route)}'
          f'<h3 class="vt-sub">Business</h3>'
-         f'{_view_table(views.get("gulf-business"))}')
-    c = _view_table(views.get("business"))
+         f'{_view_table(views.get("gulf-business"), route)}')
+    c = _view_table(views.get("business"), route)
     return f'''<section>
 {_filter_bar(views)}
 <nav class="viewbar" role="tablist">
@@ -640,11 +673,12 @@ def _views_section(views):
   Airways, Gulf Air, Jazeera, Kuwait Airways, Oman Air) — flight numbers
   show the exact carriers on each ticket.</p>{b}</div>
 <div id="view-c" class="view" hidden>{c}</div>
-<p class="note">Each Book link costs one API request, so links are
-fetched for the 3 cheapest rows of each view per scan; other rows get
-one when they reach the top 3. Travel time = outbound + return together,
-layovers included — the line under it says where the connection is and
-how long the wait lasts.</p>
+<p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
+3 cheapest rows of each view). <b>Search ↗</b> = every other row: opens
+Google Flights priced from that row's country with that row's dates —
+pick the matching flights there. Travel time = outbound + return
+together, layovers included — the line under it says where the
+connection is and how long the wait lasts.</p>
 </section>'''
 
 
@@ -662,6 +696,7 @@ def render(cfg=None) -> str:
          '--slice ORIGIN:DEST:YYYY-MM-DD</code> — then '
          '<code>python hunt.py scan</code>.</p>')
     n_panels = sum(len(c["panels"]) for c in d["cards"])
+    views, route = _view_data(d["cards"])
 
     return f'''<title>Fare Hunter</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -684,9 +719,9 @@ def render(cfg=None) -> str:
 
 {action}
 
-{_kpi_section(_view_data(d["cards"]))}
+{_kpi_section(views, route)}
 
-{_views_section(_view_data(d["cards"]))}
+{_views_section(views, route)}
 
 <details class="more"><summary>Price history &amp; watch detail</summary>
 <section><h2>Watches</h2><div class="grid">{cards}</div></section>
@@ -945,8 +980,11 @@ footer { margin-top: 36px; padding-top: 14px;
 /* --- filter bar --- */
 .filterbar { display: flex; flex-wrap: wrap; gap: 10px 18px;
   align-items: center; margin: 20px 0 0; padding: 12px 14px;
-  border: 1px solid var(--hair); border-radius: 12px;
+  border: 1px solid var(--accent); border-radius: 12px;
   background: var(--card); }
+.fbar-title { flex-basis: 100%; font: 600 14px/1 "IBM Plex Sans",
+  sans-serif; color: var(--accent); }
+.booklink.alt { color: var(--ink-2); }
 .fgroup { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .flbl { font: 600 11px/1 "IBM Plex Mono", monospace; letter-spacing: .05em;
   text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
