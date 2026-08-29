@@ -77,8 +77,11 @@ jobs:
             --slice RUH:LIS:2026-10-09 --slice LIS:RUH:2026-10-19 \
             --flex 1 --length-flex 1 --target-eco 2100 --max-stops 1 \
             --focus SV --focus EY --focus QR --focus EK \
-            --focus LH --focus KL --focus TK \
-            --probe QR --probe EY --probe EK
+            --focus LH --focus KL --focus TK
+          # --probe removed: run #74 measured Ignav's airlines_include
+          # returning 0-1 offers per restricted round-trip search (the
+          # general pool already carries the short combos since the
+          # max_results=250 change) — 12 requests/scan for nothing.
 
           echo "::group::Active providers"
           python hunt.py providers
