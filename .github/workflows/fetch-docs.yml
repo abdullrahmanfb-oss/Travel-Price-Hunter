@@ -20,7 +20,9 @@ jobs:
     steps:
       - name: Fetch and print as text
         run: |
-          curl -sSL "${{ inputs.url }}" -o page.html
+          # --compressed: the site serves gzip/brotli regardless; without
+          # this flag curl writes the raw compressed bytes
+          curl -sSL --compressed "${{ inputs.url }}" -o page.html
           # crude tag-strip so tables stay readable in the log
           python3 - <<'EOF'
           import html, re
