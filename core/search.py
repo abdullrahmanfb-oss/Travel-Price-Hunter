@@ -297,6 +297,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             # "cheapest Gulf airlines" dashboard view.
             _record_route_matrix(watch, variant, ranked, at, providers)
             _record_gulf_matrix(watch, variant, ranked, at, providers)
+            _record_pure_matrix(watch, variant, ranked, at, providers)
             recorded = {_record_matrix(watch, variant, best, ranked, at)}
             # Focus carriers (e.g. Saudia): their best itinerary gets its
             # own window even when it never wins. Reuses offers this scan
@@ -450,6 +451,16 @@ def _record_gulf_matrix(watch, variant, ranked, at, providers):
     gulf = [o for o in ranked if _is_gulf(o)]
     if gulf:
         _record_best_per_market(watch, variant, gulf, "gulf-any", at,
+                                providers)
+
+
+def _record_pure_matrix(watch, variant, ranked, at, providers):
+    """Same, restricted to SINGLE-carrier itineraries (every segment on
+    one airline — no airline change at the connection) — feeds the
+    dashboard's 'One airline' view."""
+    pure = [o for o in ranked if len(_seg_carriers(o)) == 1]
+    if pure:
+        _record_best_per_market(watch, variant, pure, "pure-any", at,
                                 providers)
 
 

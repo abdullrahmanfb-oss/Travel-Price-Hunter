@@ -135,7 +135,10 @@ def search(req: dict) -> list[dict]:
 
     results = _extract(data)
     out = []
-    for item in results[:req.get("max_results", 20)]:
+    # 50, not 20: mid-price short/pure-carrier itineraries (~2x the
+    # cheapest interline) were being trimmed. Same billed request —
+    # keeping more of the response is free.
+    for item in results[:req.get("max_results", 50)]:
         norm = _normalise(item, payload)
         if norm:
             out.append(norm)

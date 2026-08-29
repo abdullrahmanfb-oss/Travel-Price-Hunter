@@ -290,7 +290,7 @@ def _one_window(w, var, rows, all_codes):
     quoted = {r["pos_code"] for r in rows}
     mx = max(r["amount_sar"] for r in rows)
     itin = rows[0]["itin_key"]
-    route_window = itin in ("cheapest-any", "gulf-any")
+    route_window = itin in ("cheapest-any", "gulf-any", "pure-any")
     if itin == "cheapest-any":
         head = (f'cheapest for the route from each country — any airline, '
                 f'any date in the flex window · '
@@ -299,6 +299,11 @@ def _one_window(w, var, rows, all_codes):
     elif itin == "gulf-any":
         head = (f'cheapest Gulf-airlines ticket from each country — any '
                 f'date in the flex window · '
+                f'{len(rows)} of {len(all_codes)} markets quoted · '
+                f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
+    elif itin == "pure-any":
+        head = (f'cheapest one-airline ticket from each country — every '
+                f'segment on the same carrier · '
                 f'{len(rows)} of {len(all_codes)} markets quoted · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     else:
@@ -497,6 +502,8 @@ def _view_data(cards):
                     views.setdefault(var, rows)
                 elif key == "gulf-any":
                     views.setdefault(f"gulf-{var}", rows)
+                elif key == "pure-any":
+                    views.setdefault(f"pure-{var}", rows)
         break                      # one flight watch drives the overview
     return views, route
 
@@ -642,6 +649,7 @@ def _filter_bar(views):
   <div class="fgroup"><span class="flbl">Airline</span>
     <button class="fbtn airbtn active" data-air="">All</button>
     {chips}
+    <button class="fbtn" id="fpure">One airline only</button>
   </div>
   <div class="fgroup fprice"><span class="flbl">Max price</span>
     <input type="range" id="pmax" min="{lo}" max="{hi}" value="{hi}"
@@ -659,12 +667,17 @@ def _views_section(views, route=None):
          f'<h3 class="vt-sub">Business</h3>'
          f'{_view_table(views.get("gulf-business"), route)}')
     c = _view_table(views.get("business"), route)
+    dd = (f'<h3 class="vt-sub">Economy</h3>'
+          f'{_view_table(views.get("pure-economy"), route)}'
+          f'<h3 class="vt-sub">Business</h3>'
+          f'{_view_table(views.get("pure-business"), route)}')
     return f'''<section>
 {_filter_bar(views)}
 <nav class="viewbar" role="tablist">
   <button class="vbtn active" data-view="view-a">A · Economy, all markets</button>
   <button class="vbtn" data-view="view-b">B · Gulf airlines</button>
   <button class="vbtn" data-view="view-c">C · Business, all markets</button>
+  <button class="vbtn" data-view="view-d">D · One airline</button>
 </nav>
 <div id="view-a" class="view">{a}</div>
 <div id="view-b" class="view" hidden>
@@ -673,6 +686,11 @@ def _views_section(views, route=None):
   Airways, Gulf Air, Jazeera, Kuwait Airways, Oman Air) — flight numbers
   show the exact carriers on each ticket.</p>{b}</div>
 <div id="view-c" class="view" hidden>{c}</div>
+<div id="view-d" class="view" hidden>
+  <p class="note">Every segment on the SAME airline — no airline change
+  at the connection (e.g. Riyadh→Doha→Lisbon all on Qatar Airways).
+  Each country's row is its cheapest such ticket; tap an airline chip
+  above to keep only that carrier.</p>{dd}</div>
 <p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
 3 cheapest rows of each view). <b>Search ↗</b> = every other row: opens
 Google Flights priced from that row's country with that row's dates —
@@ -1039,6 +1057,7 @@ document.querySelectorAll(".k-book").forEach(function (s) {
 // --- ticket filters: sort / airline / max price (client-side only) ---
 var selAir = new Set();
 var sortKey = "sar";
+var pureOnly = false;
 function applyFilters() {
   var pmax = document.getElementById("pmax");
   var noLimit = !pmax || +pmax.value >= +pmax.max;
@@ -1052,8 +1071,9 @@ function applyFilters() {
       var codes = (r.dataset.air || "").split(" ").filter(Boolean);
       var okAir = selAir.size === 0 ||
         codes.some(function (c) { return selAir.has(c); });
+      var okPure = !pureOnly || codes.length === 1;
       var okPrice = noLimit || +r.dataset.sar <= lim;
-      r.hidden = !(okAir && okPrice);
+      r.hidden = !(okAir && okPure && okPrice);
       if (!r.hidden) vis.push(r);
     });
     vis.sort(function (a, b) {
@@ -1089,6 +1109,12 @@ document.querySelectorAll(".airbtn").forEach(function (b) {
     applyFilters();
   });
 });
+var fpure = document.getElementById("fpure");
+if (fpure) fpure.addEventListener("click", function () {
+  pureOnly = !pureOnly;
+  fpure.classList.toggle("active", pureOnly);
+  applyFilters();
+});
 var pmaxEl = document.getElementById("pmax");
 var pmaxLbl = document.getElementById("pmaxlbl");
 function pmaxText() {
@@ -1104,6 +1130,8 @@ var freset = document.getElementById("freset");
 if (freset) freset.addEventListener("click", function () {
   selAir.clear();
   sortKey = "sar";
+  pureOnly = false;
+  if (fpure) fpure.classList.remove("active");
   document.querySelectorAll(".sortbtn").forEach(function (x) {
     x.classList.toggle("active", x.dataset.sort === "sar");
   });
