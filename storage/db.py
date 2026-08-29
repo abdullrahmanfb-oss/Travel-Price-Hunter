@@ -142,6 +142,13 @@ def conn():
             c.execute(f"ALTER TABLE watches ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass                  # column already there
+    # per-row flight/dates so the route-level window ("cheapest per
+    # market, whatever flight") can say what each row's price is for
+    for col in ("flight", "dates"):
+        try:
+            c.execute(f"ALTER TABLE flight_matrix ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     return c
 
 
@@ -294,11 +301,11 @@ def record_matrix(watch_id, variant, itin_key, carrier, rows, at=None):
             c.execute(
                 """INSERT INTO flight_matrix
                    (watch_id,variant,itin_key,carrier,stops,pos_code,
-                    currency,amount_native,amount_sar,seen_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    currency,amount_native,amount_sar,seen_at,flight,dates)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (watch_id, variant, itin_key, carrier, r.get("stops"),
                  r["pos_code"], r["currency"], r["amount_native"],
-                 r["amount_sar"], now))
+                 r["amount_sar"], now, r.get("flight"), r.get("dates")))
 
 
 def latest_matrix(watch_id, variant):
@@ -322,7 +329,10 @@ def latest_matrix(watch_id, variant):
     windows = {}
     for row in rows:
         windows.setdefault(row["itin_key"], []).append(row)
-    return sorted(windows.values(), key=lambda w: (-len(w), w[0]["itin_key"]))
+    # route-level "cheapest per market" window first, then widest coverage
+    return sorted(windows.values(),
+                  key=lambda w: (w[0]["itin_key"] != "cheapest-any",
+                                 -len(w), w[0]["itin_key"]))
 
 
 # ---------- market pruning ----------

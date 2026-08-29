@@ -275,6 +275,27 @@ def _normalise(item, payload):
     return out
 
 
+def booking_link(offer_id):
+    """POST /fares/booking-links {ignav_id} -> (url, provider_name) or
+    None. One billed request; call it only for offers actually shown.
+    The docs say ignav_id is an opaque, account-scoped token that may
+    change between searches, so this must run in the same scan that
+    produced the id."""
+    if not offer_id:
+        return None
+    r = requests.post(f"{BASE}/fares/booking-links", headers=_headers(),
+                      json={"ignav_id": offer_id}, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    opts = data.get("booking_options") or []
+    # prefer the option that books the whole trip in one place
+    for opt in sorted(opts, key=lambda o: -len(o.get("leg_indexes") or [])):
+        for link in opt.get("links") or []:
+            if link.get("url"):
+                return link["url"], link.get("provider_name") or ""
+    return None
+
+
 def _post_with_retry(url, payload, attempts=3):
     """Ignav documents no rate limits, but retry a 429/5xx anyway so one
     blip doesn't cost a whole market's quote."""
