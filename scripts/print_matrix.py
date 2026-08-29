@@ -32,6 +32,8 @@ def main():
                     stops = head.get("stops")
                     stops_txt = "direct" if stops == 0 \
                         else f"{stops} stop(s)"
+                    if head.get("via"):
+                        stops_txt += f" · {head['via']}"
                     print(f"\n=== {w['id']} · {var} · same flight "
                           f"{head['itin_key']} "
                           f"({head.get('carrier') or '?'}) · {stops_txt} ===")

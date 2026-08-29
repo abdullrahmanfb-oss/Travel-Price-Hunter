@@ -485,9 +485,7 @@ def _record_matrix(watch, variant, best, ranked, at=None,
         label += " · " + "/".join(best["dates"])
     db.record_matrix(
         watch["id"], variant, label, best.get("carrier"),
-        [{"pos_code": pc, "currency": o["currency"],
-          "amount_native": o["amount"], "amount_sar": o["sar_est"],
-          "stops": o.get("stops")} for pc, o in by_pos.items()], at)
+        [_matrix_row(pc, o) for pc, o in by_pos.items()], at)
     return key
 
 
