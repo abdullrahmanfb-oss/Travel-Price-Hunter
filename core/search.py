@@ -457,20 +457,37 @@ def _record_gulf_matrix(watch, variant, ranked, at, providers):
 
 
 def _record_pure_matrix(watch, variant, ranked, at, providers):
-    """One window PER CARRIER of that carrier's cheapest single-carrier
-    itinerary from each market (labels 'pure-QR', 'pure-EY', ...) —
-    feeds the dashboard's 'One airline' view, where the airline chips
-    then mean 'pure Qatar from every country'. No billed link calls
-    (links=0): the dashboard's constructed Search fallback covers every
-    row, so this scales to any number of carriers for free."""
+    """One window PER CARRIER (labels 'pure-QR', 'pure-EY', ...) holding,
+    for each market, that carrier's CHEAPEST single-carrier itinerary AND
+    its FASTEST one (when different) — so the dashboard's 'One airline'
+    view answers both sort orders per market, not just price. No billed
+    link calls: the constructed Search fallback covers every row, so
+    this scales to any number of carriers for free."""
     by_carrier = {}
     for o in ranked:
         codes = _seg_carriers(o)
         if len(codes) == 1:
             by_carrier.setdefault(next(iter(codes)), []).append(o)
     for code, offers in by_carrier.items():
-        _record_best_per_market(watch, variant, offers, f"pure-{code}",
-                                at, providers, links=0)
+        picks = {}
+        for o in offers:
+            pc = o["pos"]["code"]
+            pair = picks.setdefault(pc, {})
+            if "cheap" not in pair or o["sar_est"] < pair["cheap"]["sar_est"]:
+                pair["cheap"] = o
+            d = o.get("duration_min")
+            if d and ("fast" not in pair
+                      or d < (pair["fast"].get("duration_min") or 1e9)):
+                pair["fast"] = o
+        rows, seen = [], set()
+        for pc, pair in picks.items():
+            for o in (pair.get("cheap"), pair.get("fast")):
+                if o is not None and (pc, id(o)) not in seen:
+                    seen.add((pc, id(o)))
+                    rows.append(_matrix_row(pc, o))
+        if rows:
+            db.record_matrix(watch["id"], variant, f"pure-{code}", None,
+                             rows, at)
 
 
 def _record_matrix(watch, variant, best, ranked, at=None,

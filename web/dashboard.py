@@ -711,9 +711,10 @@ def _views_section(views, route=None):
 <div id="view-d" class="view" hidden>
   <p class="note">Every segment on the SAME airline — no airline change
   at the connection (e.g. Riyadh→Doha→Lisbon all on Qatar Airways).
-  One row per country PER airline: tap an airline chip above to see
-  that carrier's price from every country, and "Shortest trip" to rank
-  by total travel time.</p>{dd}</div>
+  Each country shows that airline's CHEAPEST ticket and (when different)
+  its FASTEST one: tap an airline chip above, then sort by "Cheapest"
+  for the best fare per country or "Shortest trip" for the quickest
+  routing per country.</p>{dd}</div>
 <p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
 3 cheapest rows of each view). <b>Search ↗</b> = every other row: opens
 Google Flights priced from that row's country with that row's dates —
