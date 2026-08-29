@@ -27,7 +27,8 @@ def expand(watch) -> list[list[dict]]:
     if model == "fixed":
         return [slices]
     if model == "flex":
-        return _flex(slices, watch.get("flex_days") or 0)
+        return _flex(slices, watch.get("flex_days") or 0,
+                     int(watch.get("length_flex") or 0))
     if model == "month":
         return _month(watch, slices)
     if model == "rolling":
@@ -41,13 +42,34 @@ def _shift(slices, days):
             for s in slices]
 
 
-def _flex(slices, flex):
-    out = []
+def _flex(slices, flex, length_flex=0):
+    """Whole-trip shift ±flex days; optionally the LAST slice also moves
+    ±length_flex days, so a "10 nights, give or take a day" trip stays
+    expressible. This is a CAPPED end-flex ((2·flex+1)·(2·length_flex+1)
+    pairs), not the v1 full departure×return cross product — do not widen
+    it into one."""
+    out, seen = [], set()
     for i in range(-flex, flex + 1):
         shifted = _shift(slices, i)
         if _d(shifted[0]["date"]) < clock.today_date():
             continue
-        out.append(shifted)
+        lengths = range(-length_flex, length_flex + 1) \
+            if length_flex and len(shifted) > 1 else (0,)
+        for j in lengths:
+            # the return moves by i+j in total — keep it inside its own
+            # ±flex window, same as the departure
+            if abs(i + j) > flex:
+                continue
+            var = shifted if j == 0 else shifted[:-1] + [
+                {**shifted[-1],
+                 "date": (_d(shifted[-1]["date"])
+                          + timedelta(days=j)).isoformat()}]
+            key = tuple(s["date"] for s in var)
+            if key in seen or (len(var) > 1 and
+                               _d(var[-1]["date"]) <= _d(var[0]["date"])):
+                continue
+            seen.add(key)
+            out.append(var)
     return out[:MAX_VARIANTS]
 
 
