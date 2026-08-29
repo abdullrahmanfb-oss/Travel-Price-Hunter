@@ -436,14 +436,38 @@ def _via_txt(o):
     return " · ".join(_leg_via(s) for s in slices)
 
 
+def _dir_max(o):
+    """The LONGEST direction's travel time — how a person measures a
+    trip ('a 10-hour flight'), never the two directions summed. Falls
+    back to the whole-trip total when the split is unknown."""
+    do, di = o.get("dur_out_min"), o.get("dur_in_min")
+    if do and di:
+        return max(do, di)
+    return do or di or o.get("duration_min")
+
+
+def _slice_flights(o, i):
+    slices = o.get("slices") or []
+    if len(slices) <= i:
+        return ""
+    return "+".join(s.get("flight", "?") for s in slices[i])[:32]
+
+
 def _matrix_row(pc, o):
+    slices = o.get("slices") or []
     return {"pos_code": pc, "currency": o["currency"],
             "amount_native": o["amount"], "amount_sar": o["sar_est"],
             "stops": o.get("stops"),
             "carrier_name": o.get("carrier") or "",
             "duration_min": o.get("duration_min"),
+            "dur_out": o.get("dur_out_min"),
+            "dur_in": o.get("dur_in_min"),
             "deep_link": o.get("deep_link"),
             "via": _via_txt(o),
+            "via_out": _leg_via(slices[0]) if slices else "",
+            "via_in": _leg_via(slices[1]) if len(slices) > 1 else "",
+            "flight_out": _slice_flights(o, 0),
+            "flight_in": _slice_flights(o, 1),
             "flight": "+".join(s.get("flight", "?")
                                for s in o.get("segments", []))[:48],
             "dates": "/".join(o.get("dates") or [])}
@@ -523,18 +547,19 @@ def _record_pure_matrix(watch, variant, ranked, at, providers):
 
 def _record_fastest_matrix(watch, variant, ranked, at, providers):
     """One window (label 'fastest-any'): each market's SHORTEST trip at
-    the cheapest fare that buys it — among that market's offers with a
-    known duration, take those within 60 minutes of the market's
-    fastest, and record the cheapest of them. links=0: the constructed
-    Search fallback covers every row."""
+    the cheapest fare that buys it. 'Shortest' is measured on the
+    LONGEST direction (_dir_max) — the way a person judges a trip —
+    with offers within 60 minutes of the market's fastest counting as
+    equally short; the cheapest of those wins the row. links=0: the
+    constructed Search fallback covers every row."""
     by_pos = {}
     for o in ranked:
-        if o.get("duration_min"):
+        if _dir_max(o):
             by_pos.setdefault(o["pos"]["code"], []).append(o)
     rows = []
     for pc, offers in by_pos.items():
-        fastest = min(o["duration_min"] for o in offers)
-        band = [o for o in offers if o["duration_min"] <= fastest + 60]
+        fastest = min(_dir_max(o) for o in offers)
+        band = [o for o in offers if _dir_max(o) <= fastest + 60]
         rows.append(_matrix_row(pc, min(band, key=lambda x: x["sar_est"])))
     if rows:
         db.record_matrix(watch["id"], variant, "fastest-any", None,
@@ -591,6 +616,8 @@ def _detail(o):
     return {"stops": o.get("stops"), "dates": o.get("dates"),
             "segments": o.get("segments", [])[:8],
             "duration_min": o.get("duration_min"),
+            "dur_out": o.get("dur_out_min"),
+            "dur_in": o.get("dur_in_min"),
             "via": _via_txt(o),
             "deep_link": o.get("deep_link"),
             "link_via": o.get("link_via")}

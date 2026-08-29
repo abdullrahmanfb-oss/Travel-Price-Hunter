@@ -64,6 +64,11 @@ def _offer_block(w, o, variant, edge_threshold=25.0):
     else:
         dates = " / ".join(d.get("dates") or [])
         extra = f'{d.get("stops")} stop(s) · {dates}'
+        if d.get("dur_out") and d.get("dur_in"):
+            def _hm(m):
+                return f"{int(m) // 60}h{int(m) % 60:02d}m"
+            extra += (f' · {_hm(d["dur_out"])} out / '
+                      f'{_hm(d["dur_in"])} back')
         if d.get("via"):
             extra += f' · {d["via"]}'
 
