@@ -466,6 +466,59 @@ def _stops_txt(r):
     return "direct" if s == 0 else f'{s} stop{"s" if s > 1 else ""}'
 
 
+def _fmt_dirs(r):
+    do, di = r.get("dur_out"), r.get("dur_in")
+    if do and di:
+        return f"{_fmt_dur(do)} out · {_fmt_dur(di)} back"
+    return f"{_fmt_dur(r.get('duration_min'))} round trip"
+
+
+def _row_dir_max(r):
+    """Longest direction's minutes (how a person measures a trip);
+    whole-trip total only as a legacy fallback."""
+    do, di = r.get("dur_out"), r.get("dur_in")
+    if do and di:
+        return max(int(do), int(di))
+    return int(do or di or r.get("duration_min") or 0) or None
+
+
+def _via_parts(via):
+    """'via IST 1h05m' -> ('IST', '1h05m'); 'via IST 1h05m, ATH 2h' ->
+    ('IST, ATH', '1h05m, 2h'); 'direct'/None -> None."""
+    if not via or not via.startswith("via "):
+        return None
+    airports, waits = [], []
+    for part in via[4:].split(", "):
+        bits = part.split(" ", 1)
+        airports.append(bits[0])
+        if len(bits) > 1:
+            waits.append(bits[1])
+    return ", ".join(airports), ", ".join(waits)
+
+
+def _leg_box(label, arrow, dur, flights, via):
+    fl = _e((flights or "").replace("+", " + "))
+    if via == "direct":
+        stopline = "direct — no stop"
+        waitline = ""
+    else:
+        parts = _via_parts(via)
+        n = (flights or "").count("+")
+        if parts:
+            stopline = (f'{max(n, 1)} stop'
+                        f'{"s" if max(n, 1) > 1 else ""} · {_e(parts[0])}')
+            waitline = f'wait {_e(parts[1])}' if parts[1] else ""
+        else:
+            stopline, waitline = "", ""
+    return (f'<div class="tk-leg">'
+            f'<div class="tk-leg-h"><span>{arrow} {label}</span>'
+            f'<b>{_fmt_dur(dur)}</b></div>'
+            f'<div class="tk-fl">{fl or "—"}</div>'
+            f'<small>{stopline}'
+            f'{" · " + waitline if stopline and waitline else waitline}'
+            f'</small></div>')
+
+
 # Readable names for the airline filter chips; fallback is the raw code.
 AIRLINE_NAMES = {
     "SV": "Saudia", "XY": "flynas", "F3": "flyadeal", "EK": "Emirates",
@@ -562,8 +615,8 @@ def _kpi(view_id, label, row, cabin="", route=None):
   <span class="k-sub">{_e(countries.label(row["pos_code"]))} ·
     {_e(row.get("carrier_name") or "")}</span>
   <span class="k-sub">{_fmt_dates(row.get("dates"))} ·
-    {_fmt_dur(row.get("duration_min"))}{" · " + _e(_stops_txt(row))
-                                       if _stops_txt(row) else ""}{book}</span>
+    {_fmt_dirs(row)}{" · " + _e(_stops_txt(row))
+                     if _stops_txt(row) else ""}{book}</span>
   {f'<span class="k-sub">{_e(row["via"])}</span>'
    if row.get("via") else ""}
 </a>'''
@@ -584,8 +637,8 @@ def _kpi_section(views, route=None):
 {_kpi("view-c", "Cheapest business", biz, route=route)}
 </section>
 <p class="note">Trip totals in SAR, 1 adult, Riyadh ⇄ Lisbon. Tap a card
-for the full per-country view. Travel time is the whole round trip —
-outbound + return added together, layovers included. Booking links
+for the full per-country view. Travel times are shown per direction
+(going and return separately), layovers included. Booking links
 regenerate each scan — open them in a private/incognito window for the
 quoted price.</p>'''
 
@@ -594,10 +647,7 @@ def _view_table(rows, route=None):
     if not rows:
         return ('<p class="empty">No data in the latest scan for this '
                 'view yet — it fills after the next scan.</p>')
-    out = ['<div class="vt">',
-           '<div class="vt-row vt-head"><span>Market</span>'
-           '<span>Airline</span><span>Flights · dates</span>'
-           '<span>Travel time</span><span>Price</span><span>Book</span></div>']
+    out = ['<div class="vt">']
     for i, r in enumerate(rows):
         native = "" if r["currency"] == "SAR" else \
             f'<small>{r["amount_native"]:,.0f} {_e(r["currency"])}</small>'
@@ -612,25 +662,37 @@ def _view_table(rows, route=None):
         chips = '<span class="badge b-good">cheapest</span>' if i == 0 else \
             ('<span class="badge b-muted">home</span>'
              if r["pos_code"] == "SA" else "")
-        via = (f'<br><small>{_e(r["via"])}</small>'
-               if r.get("via") else "")
-        stops = (f'<br><small>{_e(_stops_txt(r))}</small>'
-                 if _stops_txt(r) else "")
-        dur = r.get("duration_min")
+        if r.get("flight_out"):
+            legs = _leg_box("Going", "→", r.get("dur_out"),
+                            r.get("flight_out"), r.get("via_out"))
+            if r.get("flight_in"):
+                legs += _leg_box("Return", "←", r.get("dur_in"),
+                                 r.get("flight_in"), r.get("via_in"))
+        else:
+            # legacy row recorded before the per-direction split
+            legs = _leg_box("Round trip", "⇄", r.get("duration_min"),
+                            r.get("flight"), None)
+            if r.get("via"):
+                legs = legs.replace("<small></small>",
+                                    f'<small>{_e(r["via"])}</small>')
+        dmax = _row_dir_max(r)
         out.append(
-            f'<div class="vt-row{" best" if i == 0 else ""}" '
+            f'<div class="vt-row tk{" best" if i == 0 else ""}" '
             f'data-sar="{r["amount_sar"]:.0f}" '
-            f'data-dur="{int(dur) if dur else ""}" '
+            f'data-dur="{dmax if dmax else ""}" '
             f'data-air="{_e(" ".join(_row_codes(r.get("flight"))))}">'
+            f'<div class="tk-head">'
             f'<span class="vt-mkt">{_e(countries.label(r["pos_code"]))} '
             f'{chips}</span>'
-            f'<span>{_e(r.get("carrier_name") or "—")}</span>'
-            f'<span class="vt-fl">{_e(r.get("flight") or "")}<br>'
-            f'<small>{_fmt_dates(r.get("dates"))}</small>{via}</span>'
-            f'<span>{_fmt_dur(r.get("duration_min"))}{stops}</span>'
-            f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR<br>'
-            f'{native}</span>'
-            f'<span>{book}</span></div>')
+            f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR</span>'
+            f'</div>'
+            f'<div class="tk-sub">'
+            f'<span>{_e(r.get("carrier_name") or "—")} · '
+            f'{_fmt_dates(r.get("dates"))}</span>'
+            f'<span>{native}{" " if native else ""}{book}</span>'
+            f'</div>'
+            f'<div class="tk-legs">{legs}</div>'
+            f'</div>')
     out.append('<div class="vt-row vt-none" hidden>No tickets match '
                'these filters in THIS view — airline-specific tickets '
                'live in view D · One airline; or loosen the filters.'
@@ -648,8 +710,8 @@ def _filter_bar(views):
         for r in rows or []:
             codes.update(_row_codes(r.get("flight")))
             prices.append(r["amount_sar"])
-            if r.get("duration_min"):
-                durs.append(int(r["duration_min"]))
+            if _row_dir_max(r):
+                durs.append(_row_dir_max(r))
     if not prices:
         return ""
     lo = int(min(prices) // 100 * 100)
@@ -715,10 +777,11 @@ def _views_section(views, route=None):
 </nav>
 <div id="view-e" class="view">
   <p class="note">Each country's SHORTEST trip at the cheapest fare
-  that buys it (options within an hour of that country's fastest count
-  as equally short — the cheapest of them wins the row). Sort by
-  "Cheapest" to rank these short tickets by price; airline chips
-  narrow to one carrier.</p>{ee}</div>
+  that buys it — measured on each direction separately, never added
+  together (options within an hour of the fastest count as equally
+  short; the cheapest of them wins). Sort by "Cheapest" to rank these
+  short tickets by price; airline chips narrow to one carrier.</p>
+  {ee}</div>
 <div id="view-a" class="view" hidden>{a}</div>
 <div id="view-b" class="view" hidden>
   <p class="note">Cheapest tickets that include a Gulf carrier (Saudia,
@@ -734,11 +797,12 @@ def _views_section(views, route=None):
   for the best fare per country or "Shortest trip" for the quickest
   routing per country.</p>{dd}</div>
 <p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
-3 cheapest rows of each view). <b>Search ↗</b> = every other row: opens
-Google Flights priced from that row's country with that row's dates —
-pick the matching flights there. Travel time = outbound + return
-together, layovers included — the line under it says where the
-connection is and how long the wait lasts.</p>
+3 cheapest tickets of each view). <b>Search ↗</b> = every other ticket:
+opens Google Flights priced from that ticket's country with its dates —
+pick the matching flights there. Each ticket box shows GOING and RETURN
+separately: that direction's own travel time, flights, stop airport and
+wait. The travel-time filter limits each direction, not the two added
+together.</p>
 </section>'''
 
 
@@ -1061,6 +1125,27 @@ footer { margin-top: 36px; padding-top: 14px;
 .vt-row.top { background: var(--good-soft); }
 .vt-row.vt-none { display: block; color: var(--ink-3); font-size: 13px; }
 
+/* --- split-direction ticket cards --- */
+.vt-row.tk { display: block; padding: 12px 14px; }
+.tk-head { display: flex; justify-content: space-between; gap: 10px;
+  align-items: baseline; }
+.tk-head .vt-price { font-size: 16px; }
+.tk-sub { display: flex; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; color: var(--ink-2); font-size: 12.5px;
+  margin: 2px 0 10px; }
+.tk-legs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tk-leg { border: 1px solid var(--hair); border-radius: 10px;
+  padding: 8px 10px; background: var(--bg); }
+.tk-leg-h { display: flex; justify-content: space-between; gap: 8px;
+  font: 600 11px/1.4 "IBM Plex Mono", monospace; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-3); }
+.tk-leg-h b { font: 600 14px/1.3 "IBM Plex Sans", sans-serif;
+  color: var(--ink); letter-spacing: 0; text-transform: none; }
+.tk-fl { font-family: "IBM Plex Mono", monospace; font-size: 12px;
+  margin: 3px 0 1px; overflow-wrap: anywhere; }
+.tk-leg small { color: var(--ink-3); }
+@media (max-width: 480px) { .tk-legs { grid-template-columns: 1fr; } }
+
 /* --- collapsed detail sections --- */
 details.more { margin-top: 22px; border: 1px solid var(--hair);
   border-radius: 12px; background: var(--card); padding: 0 16px; }
@@ -1178,7 +1263,7 @@ var dmaxLbl = document.getElementById("dmaxlbl");
 function dmaxText() {
   if (!dmaxEl) return;
   dmaxLbl.textContent = +dmaxEl.value >= +dmaxEl.max ? "no limit"
-    : "\\u2264 " + dmaxEl.value + "h round trip";
+    : "\\u2264 " + dmaxEl.value + "h each way";
 }
 if (dmaxEl) {
   dmaxEl.addEventListener("input", function () { dmaxText(); applyFilters(); });
