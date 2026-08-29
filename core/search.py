@@ -305,13 +305,23 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             for code in [c.strip().upper()
                          for c in (watch.get("focus_airlines") or "").split(",")
                          if c.strip()]:
-                fo = min((o for o in ranked
-                          if any(s.get("flight", "").startswith(code)
-                                 for s in o.get("segments", []))),
-                         key=lambda x: x["sar_est"], default=None)
-                if fo is not None:
-                    _record_matrix(watch, variant, fo, ranked, at,
-                                   min_markets=1, skip_keys=recorded)
+                matching = [o for o in ranked
+                            if code in _seg_carriers(o)]
+                if not matching:
+                    continue
+                fo = min(matching, key=lambda x: x["sar_est"])
+                recorded.add(_record_matrix(watch, variant, fo, ranked, at,
+                                            min_markets=1,
+                                            skip_keys=recorded))
+                # the clean hub routing (e.g. QR: RUH→DOH→LIS with every
+                # segment on Qatar) — a mixed interline is usually the
+                # cheapest "containing" itinerary and buries this one
+                pure = [o for o in matching if _seg_carriers(o) == {code}]
+                if pure:
+                    po = min(pure, key=lambda x: x["sar_est"])
+                    recorded.add(_record_matrix(watch, variant, po, ranked,
+                                                at, min_markets=1,
+                                                skip_keys=recorded))
 
         best["alternatives"] = merged[1:4]
         results.append(best)
