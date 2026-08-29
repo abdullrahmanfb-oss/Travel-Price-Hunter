@@ -167,21 +167,37 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
 
     variant_list = watches.variants(watch)
     date_variants = watches.expand(watch)
-    probe = date_variants[len(date_variants) // 2]
+    base_probe = date_variants[len(date_variants) // 2]
     results = []
 
+    # One warm set for the whole scan: bump_market runs between cabins,
+    # and letting the second cabin see freshly-cold markets meant economy
+    # and business covered different markets in the same run.
+    warm = warm_markets(all_pos, route)
+
     for variant in variant_list:
-        warm = warm_markets(all_pos, route)
-
         # ---- phase 1 ----
+        # The probe date can genuinely have nothing to offer — a carrier
+        # that serves the route only some weekdays, or an airline-filtered
+        # watch — so fall back through the other date variants before
+        # declaring the whole cabin empty. Extra requests are spent only
+        # when a variant came back empty.
+        probe = base_probe
         p1 = []
-        with ThreadPoolExecutor(workers) as ex:
-            futs = [ex.submit(_one, watch, pr, pos, variant, probe, route)
-                    for pr in providers for pos in warm]
-            for f in as_completed(futs):
-                p1 += f.result()
-
-        p1 = compare.rank(compare.apply_filters(p1, watch), rates)
+        came_up_empty = []
+        for candidate in [base_probe] + [v for v in date_variants
+                                         if v != base_probe]:
+            with ThreadPoolExecutor(workers) as ex:
+                futs = [ex.submit(_one, watch, pr, pos, variant, candidate,
+                                  route)
+                        for pr in providers for pos in warm]
+                for f in as_completed(futs):
+                    p1 += f.result()
+            p1 = compare.rank(compare.apply_filters(p1, watch), rates)
+            if p1:
+                probe = candidate
+                break
+            came_up_empty.append(candidate)
         if not p1:
             continue
 
@@ -204,7 +220,10 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             with ThreadPoolExecutor(workers) as ex:
                 futs = [ex.submit(_one, watch, pr, pos, variant, sv, route)
                         for pr, pos in combos
-                        for sv in date_variants if sv != probe]
+                        for sv in date_variants
+                        # skip the phase-1 date and any variant phase 1
+                        # already proved empty across every warm market
+                        if sv != probe and sv not in came_up_empty]
                 for f in as_completed(futs):
                     p2 += f.result()
 
