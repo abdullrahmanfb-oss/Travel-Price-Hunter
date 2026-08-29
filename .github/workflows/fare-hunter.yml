@@ -77,7 +77,7 @@ jobs:
             --slice RUH:LIS:2026-10-09 --slice LIS:RUH:2026-10-19 \
             --flex 1 --length-flex 1 --target-eco 2100 --max-stops 1 \
             --focus SV --focus EY --focus QR --focus EK \
-            --focus LH --focus KL
+            --focus LH --focus KL --focus TK
 
           echo "::group::Active providers"
           python hunt.py providers

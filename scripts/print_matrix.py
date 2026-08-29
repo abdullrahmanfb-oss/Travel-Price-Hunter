@@ -28,6 +28,9 @@ def main():
                 elif head["itin_key"] == "gulf-any":
                     print(f"\n=== {w['id']} · {var} · GULF AIRLINES — "
                           f"CHEAPEST PER MARKET (any flex date) ===")
+                elif head["itin_key"] == "pure-any":
+                    print(f"\n=== {w['id']} · {var} · ONE AIRLINE — "
+                          f"CHEAPEST PER MARKET (any flex date) ===")
                 else:
                     stops = head.get("stops")
                     stops_txt = "direct" if stops == 0 \
@@ -41,7 +44,8 @@ def main():
                     tag = "  <- cheapest" if i == 0 else \
                         ("  (home)" if r["pos_code"] == "SA" else "")
                     via = ""
-                    if head["itin_key"] in ("cheapest-any", "gulf-any") \
+                    if head["itin_key"] in ("cheapest-any", "gulf-any",
+                                            "pure-any") \
                             and r.get("flight"):
                         via = f"   {r['flight']}" + \
                             (f" {r['dates']}" if r.get("dates") else "") + \
