@@ -320,6 +320,7 @@ def _one_window(w, var, rows, all_codes):
             # each market's price may come from a different flight/date
             native += (f' <span class="mx-native">· {_e(r["flight"])}'
                        f'{" · " + _e(r["dates"]) if r.get("dates") else ""}'
+                       f'{" · " + _e(r["via"]) if r.get("via") else ""}'
                        f'</span>')
         body.append(
             f'<div class="bc-row{" home" if r["pos_code"] == "SA" else ""}">'
@@ -441,6 +442,13 @@ def _fmt_dates(d):
     return _e((d or "").replace("/", " → ")) or "—"
 
 
+def _stops_txt(r):
+    s = r.get("stops")
+    if s is None:
+        return ""
+    return "direct" if s == 0 else f'{s} stop{"s" if s > 1 else ""}'
+
+
 def _view_data(cards):
     """Pull the four view row-sets (cheapest-any / gulf-any per cabin)
     from the latest scan's matrix windows. Rows arrive cheapest-first."""
@@ -476,7 +484,8 @@ def _kpi(view_id, label, row, cabin=""):
   <span class="k-sub">{_e(countries.label(row["pos_code"]))} ·
     {_e(row.get("carrier_name") or "")}</span>
   <span class="k-sub">{_fmt_dates(row.get("dates"))} ·
-    {_fmt_dur(row.get("duration_min"))}{book}</span>
+    {_fmt_dur(row.get("duration_min"))}{" · " + _e(_stops_txt(row))
+                                       if _stops_txt(row) else ""}{book}</span>
 </a>'''
 
 
@@ -495,8 +504,10 @@ def _kpi_section(views):
 {_kpi("view-c", "Cheapest business", biz)}
 </section>
 <p class="note">Trip totals in SAR, 1 adult, Riyadh ⇄ Lisbon. Tap a card
-for the full per-country view. Booking links regenerate each scan —
-open them in a private/incognito window for the quoted price.</p>'''
+for the full per-country view. Travel time is the whole round trip —
+outbound + return added together, layovers included. Booking links
+regenerate each scan — open them in a private/incognito window for the
+quoted price.</p>'''
 
 
 def _view_table(rows):
@@ -506,25 +517,28 @@ def _view_table(rows):
     out = ['<div class="vt">',
            '<div class="vt-row vt-head"><span>Market</span>'
            '<span>Airline</span><span>Flights · dates</span>'
-           '<span>Duration</span><span>Price</span><span>Book</span></div>']
+           '<span>Travel time</span><span>Price</span><span>Book</span></div>']
     for i, r in enumerate(rows):
         native = "" if r["currency"] == "SAR" else \
             f'<small>{r["amount_native"]:,.0f} {_e(r["currency"])}</small>'
         book = (f'<a class="booklink" href="{_e(r["deep_link"])}" '
                 f'target="_blank" rel="noopener">Book ↗</a>'
-                if r.get("deep_link") else
-                '<span class="vt-dim">on next win</span>')
+                if r.get("deep_link") else '<span class="vt-dim">—</span>')
         chips = '<span class="badge b-good">cheapest</span>' if i == 0 else \
             ('<span class="badge b-muted">home</span>'
              if r["pos_code"] == "SA" else "")
+        via = (f'<br><small>{_e(r["via"])}</small>'
+               if r.get("via") else "")
+        stops = (f'<br><small>{_e(_stops_txt(r))}</small>'
+                 if _stops_txt(r) else "")
         out.append(
             f'<div class="vt-row{" best" if i == 0 else ""}">'
             f'<span class="vt-mkt">{_e(countries.label(r["pos_code"]))} '
             f'{chips}</span>'
             f'<span>{_e(r.get("carrier_name") or "—")}</span>'
             f'<span class="vt-fl">{_e(r.get("flight") or "")}<br>'
-            f'<small>{_fmt_dates(r.get("dates"))}</small></span>'
-            f'<span>{_fmt_dur(r.get("duration_min"))}</span>'
+            f'<small>{_fmt_dates(r.get("dates"))}</small>{via}</span>'
+            f'<span>{_fmt_dur(r.get("duration_min"))}{stops}</span>'
             f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR<br>'
             f'{native}</span>'
             f'<span>{book}</span></div>')
@@ -552,6 +566,11 @@ def _views_section(views):
   Airways, Gulf Air, Jazeera, Kuwait Airways, Oman Air) — flight numbers
   show the exact carriers on each ticket.</p>{b}</div>
 <div id="view-c" class="view" hidden>{c}</div>
+<p class="note">Each Book link costs one API request, so links are
+fetched for the 3 cheapest rows of each view per scan; other rows get
+one when they reach the top 3. Travel time = outbound + return together,
+layovers included — the line under it says where the connection is and
+how long the wait lasts.</p>
 </section>'''
 
 

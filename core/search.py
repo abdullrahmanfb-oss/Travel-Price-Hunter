@@ -15,6 +15,7 @@ import collections
 import os
 import threading
 import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core import clock, compare, countries, watches
@@ -361,6 +362,48 @@ def _is_gulf(o):
     return bool(_seg_carriers(o) & GULF)
 
 
+def _hm(mins):
+    return f"{int(mins) // 60}h{int(mins) % 60:02d}m"
+
+
+def _lay_min(arrive, depart):
+    """Minutes on the ground between two segments. Both stamps are local
+    to the SAME connection airport, so plain subtraction is correct."""
+    try:
+        a = datetime.fromisoformat(arrive)
+        d = datetime.fromisoformat(depart)
+        m = (d - a).total_seconds() / 60
+        return int(m) if 0 < m < 48 * 60 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _leg_via(segs):
+    """'direct' or 'via AUH 2h05m' — where a leg's connection is and how
+    long the wait there lasts."""
+    if len(segs) <= 1:
+        return "direct"
+    parts = []
+    for a, b in zip(segs, segs[1:]):
+        lay = _lay_min(a.get("arrive"), b.get("depart"))
+        parts.append((a.get("to") or "?") + (f" {_hm(lay)}" if lay else ""))
+    return "via " + ", ".join(parts)
+
+
+def _via_txt(o):
+    """Per-direction connection summary for matrix rows, e.g.
+    'out via AUH 2h05m · back via AUH 1h30m'."""
+    slices = o.get("slices") or []
+    if not slices:
+        return ""
+    if len(slices) == 1:
+        return _leg_via(slices[0])
+    if len(slices) == 2:
+        return (f"out {_leg_via(slices[0])} · "
+                f"back {_leg_via(slices[1])}")
+    return " · ".join(_leg_via(s) for s in slices)
+
+
 def _matrix_row(pc, o):
     return {"pos_code": pc, "currency": o["currency"],
             "amount_native": o["amount"], "amount_sar": o["sar_est"],
@@ -368,15 +411,18 @@ def _matrix_row(pc, o):
             "carrier_name": o.get("carrier") or "",
             "duration_min": o.get("duration_min"),
             "deep_link": o.get("deep_link"),
+            "via": _via_txt(o),
             "flight": "+".join(s.get("flight", "?")
                                for s in o.get("segments", []))[:48],
             "dates": "/".join(o.get("dates") or [])}
 
 
 def _record_best_per_market(watch, variant, offers, label, at, providers):
-    """One window: each market's cheapest offer from `offers`. The
-    cheapest row gets a booking link fetched (one billed call) — that's
-    the row the user would actually book."""
+    """One window: each market's cheapest offer from `offers`. The THREE
+    cheapest rows get booking links fetched (one billed call each) — the
+    rows the user would actually book. Windows share offer objects, so an
+    offer that tops several windows is only billed once, and _attach_link
+    skips offers that already carry a link."""
     by_pos = {}
     for o in offers:
         pc = o["pos"]["code"]
@@ -385,8 +431,8 @@ def _record_best_per_market(watch, variant, offers, label, at, providers):
             by_pos[pc] = o
     if not by_pos:
         return
-    best = min(by_pos.values(), key=lambda x: x["sar_est"])
-    _attach_link(best, providers)
+    for o in sorted(by_pos.values(), key=lambda x: x["sar_est"])[:3]:
+        _attach_link(o, providers)
     db.record_matrix(watch["id"], variant, label, None,
                      [_matrix_row(pc, o) for pc, o in by_pos.items()], at)
 
