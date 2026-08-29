@@ -185,8 +185,13 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         probe = base_probe
         p1 = []
         came_up_empty = []
-        for candidate in [base_probe] + [v for v in date_variants
-                                         if v != base_probe]:
+        # nearest dates first, and at most three attempts: a schedule gap
+        # is usually +-1 day, and a watch with genuinely nothing to find
+        # must not burn warm x variants requests every single scan
+        others = sorted((v for v in date_variants if v != base_probe),
+                        key=lambda v: abs(date_variants.index(v)
+                                          - date_variants.index(base_probe)))
+        for candidate in ([base_probe] + others)[:3]:
             with ThreadPoolExecutor(workers) as ex:
                 futs = [ex.submit(_one, watch, pr, pos, variant, candidate,
                                   route)
@@ -269,14 +274,30 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         # what fills the full 28-row window at zero extra request cost.
         if product == "flight":
             at = clock.iso()
-            _record_matrix(watch, variant, best, ranked, at)
+            recorded = {_record_matrix(watch, variant, best, ranked, at)}
             probe_dates = [s["date"] for s in probe]
             if best.get("dates") != probe_dates:
                 probe_best = min(
                     (o for o in ranked if o.get("dates") == probe_dates),
                     key=lambda x: x["sar_est"], default=None)
                 if probe_best is not None:
-                    _record_matrix(watch, variant, probe_best, ranked, at)
+                    recorded.add(_record_matrix(watch, variant, probe_best,
+                                                ranked, at))
+            # Focus carriers (e.g. Saudia): their best itinerary gets its
+            # own window even when it never wins. Reuses offers this scan
+            # already holds — zero extra requests. A hard airlines filter
+            # can't do this job: no pure single-carrier itinerary may
+            # exist on the route at all (interline segments).
+            for code in [c.strip().upper()
+                         for c in (watch.get("focus_airlines") or "").split(",")
+                         if c.strip()]:
+                fo = min((o for o in ranked
+                          if any(s.get("flight", "").startswith(code)
+                                 for s in o.get("segments", []))),
+                         key=lambda x: x["sar_est"], default=None)
+                if fo is not None:
+                    _record_matrix(watch, variant, fo, ranked, at,
+                                   min_markets=1, skip_keys=recorded)
 
         best["alternatives"] = merged[1:4]
         results.append(best)
@@ -284,17 +305,19 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
     return results
 
 
-def _record_matrix(watch, variant, best, ranked, at=None):
+def _record_matrix(watch, variant, best, ranked, at=None,
+                   min_markets=2, skip_keys=None):
     """For one itinerary (same flight numbers + departure times — the
     dedupe key already encodes the dates), record the cheapest quote from
-    each market that priced it."""
+    each market that priced it. Returns the itinerary key on success so
+    callers can avoid recording the same window twice in one batch."""
     keyfn = registry.KEYFN["flight"]
     try:
         key = keyfn(best)
     except Exception:
-        return
-    if not key:
-        return
+        return None
+    if not key or (skip_keys and key in skip_keys):
+        return None
     by_pos = {}
     for o in ranked:
         try:
@@ -306,8 +329,8 @@ def _record_matrix(watch, variant, best, ranked, at=None):
         cur = by_pos.get(pc)
         if cur is None or o["sar_est"] < cur["sar_est"]:
             by_pos[pc] = o
-    if len(by_pos) < 2:
-        return
+    if len(by_pos) < min_markets:
+        return None
     label = "+".join(s.get("flight", "?") for s in best.get("segments", []))
     if best.get("dates"):
         # several windows can coexist in one scan — the dates tell them apart
@@ -317,6 +340,7 @@ def _record_matrix(watch, variant, best, ranked, at=None):
         [{"pos_code": pc, "currency": o["currency"],
           "amount_native": o["amount"], "amount_sar": o["sar_est"],
           "stops": o.get("stops")} for pc, o in by_pos.items()], at)
+    return key
 
 
 def _detail(o):

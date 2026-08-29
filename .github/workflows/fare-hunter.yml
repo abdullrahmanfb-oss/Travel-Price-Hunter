@@ -55,14 +55,15 @@ jobs:
           KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
+          # --focus SV: Saudia's best itinerary gets its own market
+          # windows from the same scan (no extra requests). The strict
+          # SV-only watch is gone: no pure-Saudia RUH-LIS itinerary
+          # exists (Saudia doesn't serve LIS; its options interline), so
+          # the airlines_include filter could never match anything.
+          python hunt.py remove riyadh-lisbon-saudia || true
           python hunt.py flight riyadh-lisbon \
             --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
-            --flex 2 --target-eco 2100 --max-stops 1
-
-          # Saudia only: its own card + economy/business market windows
-          python hunt.py flight riyadh-lisbon-saudia \
-            --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
-            --flex 2 --max-stops 1 --airline SV
+            --flex 2 --target-eco 2100 --max-stops 1 --focus SV
 
           echo "::group::Active providers"
           python hunt.py providers

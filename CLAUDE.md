@@ -76,3 +76,10 @@ Use it to verify any change to compare.py or digest.py.
   each scan records the flex winner AND the requested-dates best.
 - `watches.airlines` ("SV") restricts a watch to those carriers: sent as
   Ignav `airlines_include` AND enforced client-side in `apply_filters`.
+  Beware: a hard filter finds NOTHING when no pure single-carrier
+  itinerary exists (Saudia never flies to LIS itself — it interlines).
+  For "show me this airline's price" use `watches.focus_airlines`
+  instead: extra matrix windows from offers the scan already holds,
+  zero additional requests.
+- Phase 1 falls back through at most 3 date variants (nearest first)
+  when the probe date is empty; phase 2 skips dates proven empty.
