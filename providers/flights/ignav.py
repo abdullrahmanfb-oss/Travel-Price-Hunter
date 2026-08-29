@@ -131,7 +131,10 @@ def search(req: dict) -> list[dict]:
     data = r.json()
 
     if os.environ.get("IGNAV_DEBUG"):
-        print(f"[ignav] raw response keys: {_shape(data)}", file=sys.stderr)
+        # offer count answers "is the max_results cap trimming anything?"
+        print(f"[ignav] {market} {slices[0]['date']}: "
+              f"{len(_extract(data))} offers · "
+              f"raw response keys: {_shape(data)}", file=sys.stderr)
 
     results = _extract(data)
     out = []
