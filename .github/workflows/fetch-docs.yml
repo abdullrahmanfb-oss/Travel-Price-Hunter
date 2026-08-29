@@ -1,0 +1,36 @@
+name: Fetch docs page
+
+# Manual-only diagnostic: the dev sandbox can't reach ignav.com, but the
+# runners can. Prints a docs page as text so provider config can be
+# checked against what Ignav actually supports. No secrets are used.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Docs URL to fetch
+        default: https://ignav.com/docs/markets
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and print as text
+        run: |
+          curl -sSL "${{ inputs.url }}" -o page.html
+          # crude tag-strip so tables stay readable in the log
+          python3 - <<'EOF'
+          import html, re
+          raw = open("page.html", encoding="utf-8", errors="replace").read()
+          raw = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", raw,
+                       flags=re.S | re.I)
+          raw = re.sub(r"</(tr|p|div|li|h[1-6])>", "\n", raw, flags=re.I)
+          raw = re.sub(r"</t[dh]>", " | ", raw, flags=re.I)
+          text = html.unescape(re.sub(r"<[^>]+>", "", raw))
+          for line in text.splitlines():
+              if line.strip():
+                  print(line.strip()[:300])
+          EOF
