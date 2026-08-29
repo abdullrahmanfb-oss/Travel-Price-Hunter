@@ -207,6 +207,8 @@ def _panel(w, p, chart_id):
     stops = det.get("stops")
     if stops is not None:
         meta += " · " + ("direct" if stops == 0 else f"{stops} stop(s)")
+    if det.get("via"):
+        meta += f' · {_e(det["via"])}'
     metaline = f'<div class="srcline">{meta}</div>'
     home = countries.label("SA")
     gapline = ""
@@ -487,6 +489,8 @@ def _kpi(view_id, label, row, cabin=""):
   <span class="k-sub">{_fmt_dates(row.get("dates"))} ·
     {_fmt_dur(row.get("duration_min"))}{" · " + _e(_stops_txt(row))
                                        if _stops_txt(row) else ""}{book}</span>
+  {f'<span class="k-sub">{_e(row["via"])}</span>'
+   if row.get("via") else ""}
 </a>'''
 
 
