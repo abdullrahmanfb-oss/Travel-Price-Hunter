@@ -42,7 +42,8 @@ def main():
                     if head["itin_key"] in ("cheapest-any", "gulf-any") \
                             and r.get("flight"):
                         via = f"   {r['flight']}" + \
-                            (f" {r['dates']}" if r.get("dates") else "")
+                            (f" {r['dates']}" if r.get("dates") else "") + \
+                            (f"   {r['via']}" if r.get("via") else "")
                     print(f"  {countries.label(r['pos_code']):<24} "
                           f"{r['amount_sar']:>10,.0f} SAR   "
                           f"{r['amount_native']:>12,.0f} "
