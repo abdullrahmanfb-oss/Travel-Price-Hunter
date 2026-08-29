@@ -117,6 +117,9 @@ def search(req: dict) -> list[dict]:
         # silently gets single-passenger pricing.
         "adults": int(req.get("adults") or 1),
     }
+    if req.get("airlines"):
+        # documented filter (docs/search): only these 2-letter codes
+        payload["airlines_include"] = req["airlines"]
     path = ONE_WAY_PATH
     if len(slices) == 2:
         payload["return_date"] = slices[1]["date"]

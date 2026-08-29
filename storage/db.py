@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS watches (
     cabins        TEXT DEFAULT 'economy,business',
     max_stops     INTEGER DEFAULT 2,
     exclude       TEXT,
+    airlines      TEXT,                -- only these carriers, e.g. 'SV'
     -- hotel
     city          TEXT,
     checkin       TEXT,
@@ -133,6 +134,12 @@ def conn():
     c = sqlite3.connect(DB)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
+    # CREATE IF NOT EXISTS never alters an existing table, so columns added
+    # after a DB was first created need an explicit migration.
+    try:
+        c.execute("ALTER TABLE watches ADD COLUMN airlines TEXT")
+    except sqlite3.OperationalError:
+        pass                      # column already there
     return c
 
 
@@ -274,11 +281,12 @@ def previous_best(watch_id, variant):
     return r["low"] if r and r["low"] is not None else None
 
 
-def record_matrix(watch_id, variant, itin_key, carrier, rows):
+def record_matrix(watch_id, variant, itin_key, carrier, rows, at=None):
     """One snapshot: the same flight quoted from every market that
     priced it this scan. `rows`: [{pos_code, currency, amount_native,
-    amount_sar, stops}]."""
-    now = clock.iso()
+    amount_sar, stops}]. Pass the same `at` when recording several
+    windows in one scan, so latest_matrix sees them as one batch."""
+    now = at or clock.iso()
     with conn() as c:
         for r in rows:
             c.execute(
@@ -292,7 +300,11 @@ def record_matrix(watch_id, variant, itin_key, carrier, rows):
 
 
 def latest_matrix(watch_id, variant):
-    """Rows of the most recent same-flight snapshot, cheapest first."""
+    """The most recent scan's same-flight snapshots, as a list of
+    windows — one row list per itinerary, each cheapest first. A scan can
+    record several windows (e.g. the requested-dates flight, quoted by
+    every market, plus a flex-date winner only the deep pass priced), so
+    widest coverage comes first."""
     with conn() as c:
         r = c.execute(
             """SELECT MAX(seen_at) m FROM flight_matrix
@@ -300,11 +312,15 @@ def latest_matrix(watch_id, variant):
             (watch_id, variant)).fetchone()
         if not r or not r["m"]:
             return []
-        return [dict(x) for x in c.execute(
+        rows = [dict(x) for x in c.execute(
             """SELECT * FROM flight_matrix
                WHERE watch_id=? AND variant=? AND seen_at=?
                ORDER BY amount_sar ASC""",
             (watch_id, variant, r["m"]))]
+    windows = {}
+    for row in rows:
+        windows.setdefault(row["itin_key"], []).append(row)
+    return sorted(windows.values(), key=lambda w: (-len(w), w[0]["itin_key"]))
 
 
 # ---------- market pruning ----------

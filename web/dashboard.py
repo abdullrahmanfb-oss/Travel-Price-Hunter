@@ -73,9 +73,9 @@ def collect(cfg=None):
         matrix = {}
         if w["product"] == "flight":
             for var in watches.variants(w):
-                rows = db.latest_matrix(w["id"], var)
-                if rows:
-                    matrix[var] = rows
+                windows = db.latest_matrix(w["id"], var)  # list of row lists
+                if windows:
+                    matrix[var] = windows
 
         # a watch with no history yet still belongs on the board
         cards.append({"watch": w, "panels": panels, "matrix": matrix})
@@ -260,54 +260,61 @@ def _card(c, idx):
 </article>'''
 
 
+def _one_window(w, var, rows, all_codes):
+    quoted = {r["pos_code"] for r in rows}
+    mx = max(r["amount_sar"] for r in rows)
+    itin = rows[0]["itin_key"]
+    carrier = rows[0].get("carrier") or ""
+    stops = rows[0].get("stops")
+    stops_txt = "direct" if stops == 0 else f'{stops} stop(s)'
+    body = []
+    for i, r in enumerate(rows):
+        chips = ('<span class="badge b-good">cheapest</span>'
+                 if i == 0 else "")
+        if r["pos_code"] == "SA":
+            chips += '<span class="badge b-muted">home</span>'
+        width = max(2.0, r["amount_sar"] / mx * 100)
+        native = "" if r["currency"] == "SAR" else \
+            f' <span class="mx-native">({r["amount_native"]:,.0f} ' \
+            f'{_e(r["currency"])})</span>'
+        body.append(
+            f'<div class="bc-row{" home" if r["pos_code"] == "SA" else ""}">'
+            f'<span class="bc-name">'
+            f'{_e(countries.label(r["pos_code"]))}</span>'
+            f'<span class="bc-track"><span class="bc-bar" '
+            f'style="width:{width:.1f}%"></span></span>'
+            f'<span class="bc-val">{r["amount_sar"]:,.0f}{native}</span>'
+            f'<span class="bc-chips">{chips}</span></div>')
+    for code in sorted(set(all_codes) - quoted, key=countries.name):
+        body.append(
+            f'<div class="bc-row unquoted">'
+            f'<span class="bc-name">{_e(countries.label(code))}</span>'
+            f'<span class="bc-track"></span>'
+            f'<span class="bc-val">—</span>'
+            f'<span class="bc-chips"></span></div>')
+    return (
+        f'<article class="card">'
+        f'<header class="card-head"><h3>{_e(w["id"])}</h3>'
+        f'<span class="variant">{_e(var)}</span></header>'
+        f'<div class="srcline">flight <span class="mx-itin">'
+        f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt} · '
+        f'quoted in {len(rows)} of {len(all_codes)} markets · '
+        f'{_e(rows[0]["seen_at"][:10])} · SAR</div>'
+        f'<div class="bycountry">{"".join(body)}</div></article>')
+
+
 def _matrix_windows(cards):
-    """One window per watch/cabin: the exact same flight, quoted from
-    every market. Unquoted markets stay visible as em-dash rows."""
+    """One window per watch/cabin/itinerary: the exact same flight, quoted
+    from every market. Unquoted markets stay visible as em-dash rows. A
+    scan can leave several windows per cabin — the requested-dates flight
+    (full market coverage) plus a flex-date winner."""
     all_codes = list(countries.NAME)
     windows = []
     for c in cards:
         w = c["watch"]
-        for var, rows in c.get("matrix", {}).items():
-            quoted = {r["pos_code"] for r in rows}
-            mx = max(r["amount_sar"] for r in rows)
-            itin = rows[0]["itin_key"]
-            carrier = rows[0].get("carrier") or ""
-            stops = rows[0].get("stops")
-            stops_txt = "direct" if stops == 0 else f'{stops} stop(s)'
-            body = []
-            for i, r in enumerate(rows):
-                chips = ('<span class="badge b-good">cheapest</span>'
-                         if i == 0 else "")
-                if r["pos_code"] == "SA":
-                    chips += '<span class="badge b-muted">home</span>'
-                width = max(2.0, r["amount_sar"] / mx * 100)
-                native = "" if r["currency"] == "SAR" else \
-                    f' <span class="mx-native">({r["amount_native"]:,.0f} ' \
-                    f'{_e(r["currency"])})</span>'
-                body.append(
-                    f'<div class="bc-row{" home" if r["pos_code"] == "SA" else ""}">'
-                    f'<span class="bc-name">'
-                    f'{_e(countries.label(r["pos_code"]))}</span>'
-                    f'<span class="bc-track"><span class="bc-bar" '
-                    f'style="width:{width:.1f}%"></span></span>'
-                    f'<span class="bc-val">{r["amount_sar"]:,.0f}{native}</span>'
-                    f'<span class="bc-chips">{chips}</span></div>')
-            for code in sorted(set(all_codes) - quoted, key=countries.name):
-                body.append(
-                    f'<div class="bc-row unquoted">'
-                    f'<span class="bc-name">{_e(countries.label(code))}</span>'
-                    f'<span class="bc-track"></span>'
-                    f'<span class="bc-val">—</span>'
-                    f'<span class="bc-chips"></span></div>')
-            windows.append(
-                f'<article class="card">'
-                f'<header class="card-head"><h3>{_e(w["id"])}</h3>'
-                f'<span class="variant">{_e(var)}</span></header>'
-                f'<div class="srcline">flight <span class="mx-itin">'
-                f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt} · '
-                f'quoted in {len(rows)} of {len(all_codes)} markets · '
-                f'{_e(rows[0]["seen_at"][:10])} · SAR</div>'
-                f'<div class="bycountry">{"".join(body)}</div></article>')
+        for var, row_lists in c.get("matrix", {}).items():
+            windows += [_one_window(w, var, rows, all_codes)
+                        for rows in row_lists]
     if not windows:
         return ('<p class="empty">Appears after the first scan with '
                 'provider credentials: the winning flight for each watch, '

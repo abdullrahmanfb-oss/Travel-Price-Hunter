@@ -59,6 +59,11 @@ jobs:
             --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
             --flex 2 --target-eco 2100 --max-stops 1
 
+          # Saudia only: its own card + economy/business market windows
+          python hunt.py flight riyadh-lisbon-saudia \
+            --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
+            --flex 2 --max-stops 1 --airline SV
+
           echo "::group::Active providers"
           python hunt.py providers
           echo "::endgroup::"

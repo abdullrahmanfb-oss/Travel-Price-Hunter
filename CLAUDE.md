@@ -70,3 +70,9 @@ Use it to verify any change to compare.py or digest.py.
   gap goes blind on routes SA never wins. `db.latest` returns the
   cheapest row of the latest day, NOT the newest row, because of those
   reference samples; `db.market_wins` likewise counts only daily lows.
+- `warm_markets` NEVER prunes SA — the gap view needs an SA quote every
+  scan. `db.latest_matrix` returns the latest scan's windows grouped by
+  itinerary (requested-dates window first, since it has full coverage);
+  each scan records the flex winner AND the requested-dates best.
+- `watches.airlines` ("SV") restricts a watch to those carriers: sent as
+  Ignav `airlines_include` AND enforced client-side in `apply_filters`.
