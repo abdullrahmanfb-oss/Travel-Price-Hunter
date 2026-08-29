@@ -143,10 +143,12 @@ def conn():
         except sqlite3.OperationalError:
             pass                  # column already there
     # per-row flight/dates so the route-level window ("cheapest per
-    # market, whatever flight") can say what each row's price is for
-    for col in ("flight", "dates"):
+    # market, whatever flight") can say what each row's price is for;
+    # carrier/duration/link feed the Power BI-style view tables
+    for col in ("flight TEXT", "dates TEXT", "carrier_name TEXT",
+                "duration_min INTEGER", "deep_link TEXT"):
         try:
-            c.execute(f"ALTER TABLE flight_matrix ADD COLUMN {col} TEXT")
+            c.execute(f"ALTER TABLE flight_matrix ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass
     return c
@@ -301,11 +303,14 @@ def record_matrix(watch_id, variant, itin_key, carrier, rows, at=None):
             c.execute(
                 """INSERT INTO flight_matrix
                    (watch_id,variant,itin_key,carrier,stops,pos_code,
-                    currency,amount_native,amount_sar,seen_at,flight,dates)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    currency,amount_native,amount_sar,seen_at,flight,dates,
+                    carrier_name,duration_min,deep_link)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (watch_id, variant, itin_key, carrier, r.get("stops"),
                  r["pos_code"], r["currency"], r["amount_native"],
-                 r["amount_sar"], now, r.get("flight"), r.get("dates")))
+                 r["amount_sar"], now, r.get("flight"), r.get("dates"),
+                 r.get("carrier_name"), r.get("duration_min"),
+                 r.get("deep_link")))
 
 
 def latest_matrix(watch_id, variant):

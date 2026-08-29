@@ -231,6 +231,15 @@ def _normalise(item, payload):
     legs = _legs(item)
     segs = [_segment(s) for leg in legs for s in leg]
 
+    # total time in the air+connections: sum of the per-leg durations
+    # ("outbound"/"inbound" carry duration_minutes in the live shape)
+    duration = 0
+    for key in ("outbound", "inbound"):
+        leg = item.get(key)
+        if isinstance(leg, dict) and isinstance(
+                leg.get("duration_minutes"), (int, float)):
+            duration += int(leg["duration_minutes"])
+
     stops = _first(item, "stops", "stop_count")
     if stops is None:
         # stops = worst leg, matching how the other providers report it
@@ -262,6 +271,7 @@ def _normalise(item, payload):
         "carrier": carrier_name or carrier_code,
         "carrier_code": (carrier_code or "").upper(),
         "stops": int(stops),
+        "duration_min": duration or None,
         "segments": segs,
         "slices": [[_segment(s) for s in leg] for leg in legs] or [segs],
         # Search responses carry no inline URL; booking links are a

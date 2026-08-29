@@ -424,6 +424,132 @@ def _holds(holds):
 <th>pay by</th></tr></thead><tbody>{rows}</tbody></table></div>'''
 
 
+# ---------- Power BI-style overview + views ----------
+
+def _fmt_dur(m):
+    if not m:
+        return "—"
+    return f"{int(m) // 60}h {int(m) % 60:02d}m"
+
+
+def _fmt_dates(d):
+    return _e((d or "").replace("/", " → ")) or "—"
+
+
+def _view_data(cards):
+    """Pull the four view row-sets (cheapest-any / gulf-any per cabin)
+    from the latest scan's matrix windows. Rows arrive cheapest-first."""
+    views = {}
+    for c in cards:
+        if c["watch"]["product"] != "flight":
+            continue
+        for var, row_lists in c.get("matrix", {}).items():
+            for rows in row_lists:
+                key = rows[0]["itin_key"]
+                if key == "cheapest-any":
+                    views.setdefault(var, rows)
+                elif key == "gulf-any":
+                    views.setdefault(f"gulf-{var}", rows)
+        break                      # one flight watch drives the overview
+    return views
+
+
+def _kpi(view_id, label, row, cabin=""):
+    if not row:
+        return (f'<a class="kpi" href="#{view_id}"><span class="k-lbl">'
+                f'{_e(label)}</span><span class="k-num">—</span>'
+                f'<span class="k-sub">awaiting scan data</span></a>')
+    cabin_chip = f'<span class="badge b-muted">{_e(cabin)}</span>' if cabin \
+        else ""
+    book = ""
+    if row.get("deep_link"):
+        book = (f'<span class="k-book" data-href="{_e(row["deep_link"])}">'
+                f'Book ↗</span>')
+    return f'''<a class="kpi" href="#{view_id}">
+  <span class="k-lbl">{_e(label)} {cabin_chip}</span>
+  <span class="k-num">{row["amount_sar"]:,.0f} <small>SAR</small></span>
+  <span class="k-sub">{_e(countries.label(row["pos_code"]))} ·
+    {_e(row.get("carrier_name") or "")}</span>
+  <span class="k-sub">{_fmt_dates(row.get("dates"))} ·
+    {_fmt_dur(row.get("duration_min"))}{book}</span>
+</a>'''
+
+
+def _kpi_section(views):
+    eco = (views.get("economy") or [None])[0]
+    biz = (views.get("business") or [None])[0]
+    ge = (views.get("gulf-economy") or [None])[0]
+    gb = (views.get("gulf-business") or [None])[0]
+    gulf, gulf_cabin = None, ""
+    for cand, cab in ((ge, "economy"), (gb, "business")):
+        if cand and (gulf is None or cand["amount_sar"] < gulf["amount_sar"]):
+            gulf, gulf_cabin = cand, cab
+    return f'''<section class="kpis">
+{_kpi("view-a", "Cheapest economy", eco)}
+{_kpi("view-b", "Cheapest Gulf airlines", gulf, gulf_cabin)}
+{_kpi("view-c", "Cheapest business", biz)}
+</section>
+<p class="note">Trip totals in SAR, 1 adult, Riyadh ⇄ Lisbon. Tap a card
+for the full per-country view. Booking links regenerate each scan —
+open them in a private/incognito window for the quoted price.</p>'''
+
+
+def _view_table(rows):
+    if not rows:
+        return ('<p class="empty">No data in the latest scan for this '
+                'view yet — it fills after the next scan.</p>')
+    out = ['<div class="vt">',
+           '<div class="vt-row vt-head"><span>Market</span>'
+           '<span>Airline</span><span>Flights · dates</span>'
+           '<span>Duration</span><span>Price</span><span>Book</span></div>']
+    for i, r in enumerate(rows):
+        native = "" if r["currency"] == "SAR" else \
+            f'<small>{r["amount_native"]:,.0f} {_e(r["currency"])}</small>'
+        book = (f'<a class="booklink" href="{_e(r["deep_link"])}" '
+                f'target="_blank" rel="noopener">Book ↗</a>'
+                if r.get("deep_link") else
+                '<span class="vt-dim">on next win</span>')
+        chips = '<span class="badge b-good">cheapest</span>' if i == 0 else \
+            ('<span class="badge b-muted">home</span>'
+             if r["pos_code"] == "SA" else "")
+        out.append(
+            f'<div class="vt-row{" best" if i == 0 else ""}">'
+            f'<span class="vt-mkt">{_e(countries.label(r["pos_code"]))} '
+            f'{chips}</span>'
+            f'<span>{_e(r.get("carrier_name") or "—")}</span>'
+            f'<span class="vt-fl">{_e(r.get("flight") or "")}<br>'
+            f'<small>{_fmt_dates(r.get("dates"))}</small></span>'
+            f'<span>{_fmt_dur(r.get("duration_min"))}</span>'
+            f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR<br>'
+            f'{native}</span>'
+            f'<span>{book}</span></div>')
+    out.append('</div>')
+    return "".join(out)
+
+
+def _views_section(views):
+    a = _view_table(views.get("economy"))
+    b = (f'<h3 class="vt-sub">Economy</h3>'
+         f'{_view_table(views.get("gulf-economy"))}'
+         f'<h3 class="vt-sub">Business</h3>'
+         f'{_view_table(views.get("gulf-business"))}')
+    c = _view_table(views.get("business"))
+    return f'''<section>
+<nav class="viewbar" role="tablist">
+  <button class="vbtn active" data-view="view-a">A · Economy, all markets</button>
+  <button class="vbtn" data-view="view-b">B · Gulf airlines</button>
+  <button class="vbtn" data-view="view-c">C · Business, all markets</button>
+</nav>
+<div id="view-a" class="view">{a}</div>
+<div id="view-b" class="view" hidden>
+  <p class="note">Cheapest tickets that include a Gulf carrier (Saudia,
+  flynas, flyadeal, Emirates, flydubai, Etihad, Air Arabia, Qatar
+  Airways, Gulf Air, Jazeera, Kuwait Airways, Oman Air) — flight numbers
+  show the exact carriers on each ticket.</p>{b}</div>
+<div id="view-c" class="view" hidden>{c}</div>
+</section>'''
+
+
 # ---------- assembly ----------
 
 def render(cfg=None) -> str:
@@ -460,18 +586,24 @@ def render(cfg=None) -> str:
 
 {action}
 
-<section><h2>Watches</h2><div class="grid">{cards}</div></section>
+{_kpi_section(_view_data(d["cards"]))}
 
-<section><h2>Price by country</h2>
-<p class="note">All prices are totals for the whole trip, in SAR. The
-first window per cabin answers "what's the cheapest way to fly this
-route from each country?" — any airline, any date in the flex window,
-with the flight and dates named on each row. The windows after it
-compare one exact flight across markets (same flight numbers and
-dates), which is the cleanest view of the point-of-sale gap. Markets
+{_views_section(_view_data(d["cards"]))}
+
+<details class="more"><summary>Price history &amp; watch detail</summary>
+<section><h2>Watches</h2><div class="grid">{cards}</div></section>
+</details>
+
+<details class="more"><summary>Same-flight market comparisons</summary>
+<section>
+<p class="note">All prices are totals for the whole trip, in SAR. Each
+window compares one exact flight across markets (same flight numbers
+and dates) — the cleanest view of the point-of-sale gap. Markets
 showing — didn't quote in the latest scan.</p>
 {_matrix_windows(d["cards"])}</section>
+</details>
 
+<details class="more"><summary>Saudi price gap · country wins · holds · providers</summary>
 <section><h2>Saudi price gap</h2>
 <p class="note">Best current price anywhere vs the latest price in
 {countries.label("SA")} for the same thing, after SAR normalisation.
@@ -485,6 +617,7 @@ Gaps of {d["threshold"]:.0f}%+ are flagged.</p>
 <section><h2>Providers</h2>{_providers(d["providers"])}
 <p class="note">⚑ = bookable (can hold). Others are price-discovery +
 link. Greyed providers have no credentials configured.</p></section>
+</details>
 
 <footer>No card is stored by this system — holds lapse unpaid.
 · Rendered {clock.iso()}</footer>
@@ -664,10 +797,88 @@ footer { margin-top: 36px; padding-top: 14px;
 @media (prefers-reduced-motion: no-preference) {
   .badge, .tile { transition: background .15s; }
 }
+
+/* --- overview KPI cards --- */
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  margin-top: 18px; }
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px;
+  background: var(--card); border: 1px solid var(--hair);
+  border-radius: 12px; text-decoration: none; color: var(--ink); }
+.kpi:hover { border-color: var(--accent); }
+.k-lbl { font: 600 12px/1.3 "IBM Plex Mono", monospace;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); }
+.k-num { font: 600 30px/1.1 "IBM Plex Sans Condensed", "Arial Narrow",
+  sans-serif; }
+.k-num small { font-size: 15px; color: var(--ink-2); }
+.k-sub { color: var(--ink-2); font-size: 12.5px; }
+.k-book { margin-left: 8px; color: var(--accent); font-weight: 600;
+  cursor: pointer; }
+@media (max-width: 720px) { .kpis { grid-template-columns: 1fr; } }
+
+/* --- view switcher + tables --- */
+.viewbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 12px; }
+.vbtn { font: 600 13px/1 "IBM Plex Sans", sans-serif; padding: 10px 14px;
+  border-radius: 999px; border: 1px solid var(--hair);
+  background: var(--card); color: var(--ink-2); cursor: pointer; }
+.vbtn.active { background: var(--accent-soft); border-color: var(--accent);
+  color: var(--ink); }
+.vt { border: 1px solid var(--hair); border-radius: 12px;
+  background: var(--card); overflow: hidden; }
+.vt-row { display: grid; gap: 10px; align-items: center;
+  grid-template-columns: 1.3fr 1fr 1.4fr .7fr .9fr .6fr;
+  padding: 10px 14px; border-top: 1px solid var(--hair); font-size: 13.5px; }
+.vt-row:first-child { border-top: 0; }
+.vt-head { font: 600 11px/1.3 "IBM Plex Mono", monospace;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
+.vt-row.best { background: var(--good-soft); }
+.vt-price { font-weight: 600; white-space: nowrap; }
+.vt-price small, .vt-fl small { color: var(--ink-3); font-weight: 400; }
+.vt-fl { font-family: "IBM Plex Mono", monospace; font-size: 12px;
+  overflow-wrap: anywhere; }
+.vt-dim { color: var(--ink-3); font-size: 12px; }
+.vt-sub { margin: 18px 0 8px; font: 600 14px/1 "IBM Plex Sans", sans-serif; }
+@media (max-width: 760px) {
+  .vt-head { display: none; }
+  .vt-row { grid-template-columns: 1fr 1fr;
+    padding: 12px 14px; }
+  .vt-mkt { grid-column: 1 / -1; font-weight: 600; }
+}
+
+/* --- collapsed detail sections --- */
+details.more { margin-top: 22px; border: 1px solid var(--hair);
+  border-radius: 12px; background: var(--card); padding: 0 16px; }
+details.more > summary { cursor: pointer; padding: 14px 0;
+  font: 600 14px/1 "IBM Plex Sans", sans-serif; color: var(--ink-2); }
+details.more[open] > summary { border-bottom: 1px solid var(--hair); }
 '''
 
 
 JS = '''
+// view switcher: buttons + KPI-card anchors both select a view
+function showView(id) {
+  document.querySelectorAll(".view").forEach(function (v) {
+    v.hidden = v.id !== id;
+  });
+  document.querySelectorAll(".vbtn").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.view === id);
+  });
+}
+document.querySelectorAll(".vbtn").forEach(function (b) {
+  b.addEventListener("click", function () { showView(b.dataset.view); });
+});
+document.querySelectorAll(".kpi").forEach(function (k) {
+  k.addEventListener("click", function (e) {
+    var id = k.getAttribute("href").slice(1);
+    showView(id);
+  });
+});
+document.querySelectorAll(".k-book").forEach(function (s) {
+  s.addEventListener("click", function (e) {
+    e.preventDefault(); e.stopPropagation();
+    window.open(s.dataset.href, "_blank", "noopener");
+  });
+});
+
 document.querySelectorAll(".chart").forEach(function (fig) {
   var cfg = JSON.parse(fig.querySelector("script").textContent);
   var svg = fig.querySelector("svg"), tip = fig.querySelector(".tip");
