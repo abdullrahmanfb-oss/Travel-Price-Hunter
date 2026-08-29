@@ -89,7 +89,8 @@ def _offer_block(w, o, variant, edge_threshold=25.0):
     for f in o.get("flags", []):
         lines.append(f'            \u26a0 {f}')
     if o.get("deep_link"):
-        lines.append(f'            {o["deep_link"][:90]}')
+        # never truncate a booking link — a cut URL can't be opened
+        lines.append(f'            {o["deep_link"]}')
     spark = sparkline([v for _, v in hist])
     if spark:
         lines.append(f'            {spark}')
