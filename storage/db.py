@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS watches (
     max_stops     INTEGER DEFAULT 2,
     exclude       TEXT,
     airlines      TEXT,                -- only these carriers, e.g. 'SV'
+    focus_airlines TEXT,               -- extra matrix windows for these
     -- hotel
     city          TEXT,
     checkin       TEXT,
@@ -136,10 +137,11 @@ def conn():
     c.executescript(SCHEMA)
     # CREATE IF NOT EXISTS never alters an existing table, so columns added
     # after a DB was first created need an explicit migration.
-    try:
-        c.execute("ALTER TABLE watches ADD COLUMN airlines TEXT")
-    except sqlite3.OperationalError:
-        pass                      # column already there
+    for col in ("airlines", "focus_airlines"):
+        try:
+            c.execute(f"ALTER TABLE watches ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass                  # column already there
     return c
 
 

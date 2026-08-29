@@ -116,6 +116,8 @@ def cmd_flight(a):
         "max_stops": a.max_stops, "exclude": a.exclude,
         "airlines": ",".join(x.strip().upper() for x in a.airline)
                     if a.airline else None,
+        "focus_airlines": ",".join(x.strip().upper() for x in a.focus)
+                          if a.focus else None,
         "date_model": _date_model(a), "flex_days": a.flex or 0,
         "month": a.month, "rolling_days": a.rolling, "nights": a.nights,
         "adults": a.adults, "target_eco": a.target_eco,
@@ -275,6 +277,9 @@ def main():
     f.add_argument("--exclude")
     f.add_argument("--airline", action="append",
                    help="only this carrier code, e.g. SV (repeatable)")
+    f.add_argument("--focus", action="append",
+                   help="extra market window for this carrier's best "
+                        "itinerary, e.g. SV (repeatable; no extra requests)")
     f.set_defaults(func=cmd_flight)
 
     h = sub.add_parser("hotel")
