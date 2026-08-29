@@ -124,6 +124,7 @@ def cmd_flight(a):
         "focus_airlines": ",".join(x.strip().upper() for x in a.focus)
                           if a.focus else None,
         "date_model": _date_model(a), "flex_days": a.flex or 0,
+        "length_flex": a.length_flex or 0,
         "month": a.month, "rolling_days": a.rolling, "nights": a.nights,
         "adults": a.adults, "target_eco": a.target_eco,
         "target_biz": a.target_biz, "status": "active",
@@ -271,6 +272,9 @@ def main():
     f.add_argument("--slice", action="append", required=True,
                    help="ORIGIN:DEST:YYYY-MM-DD (repeat for multi-city)")
     f.add_argument("--flex", type=int)
+    f.add_argument("--length-flex", type=int, dest="length_flex",
+                   help="also allow the trip to be N days longer/shorter "
+                        "(moves only the return date; capped combos)")
     f.add_argument("--month")
     f.add_argument("--rolling", type=int)
     f.add_argument("--nights", type=int, default=7)

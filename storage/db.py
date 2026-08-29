@@ -137,9 +137,10 @@ def conn():
     c.executescript(SCHEMA)
     # CREATE IF NOT EXISTS never alters an existing table, so columns added
     # after a DB was first created need an explicit migration.
-    for col in ("airlines", "focus_airlines"):
+    for col in ("airlines TEXT", "focus_airlines TEXT",
+                "length_flex INTEGER"):
         try:
-            c.execute(f"ALTER TABLE watches ADD COLUMN {col} TEXT")
+            c.execute(f"ALTER TABLE watches ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass                  # column already there
     # per-row flight/dates so the route-level window ("cheapest per

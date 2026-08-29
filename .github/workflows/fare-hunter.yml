@@ -38,9 +38,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: hunter.db
-          key: fare-hunter-db-v2-${{ github.run_id }}
+          # v3: results reset when the trip moved to Oct 9-19 — old
+          # Oct 8-16 history would pollute baselines and the gap view.
+          key: fare-hunter-db-v3-${{ github.run_id }}
           restore-keys: |
-            fare-hunter-db-v2-
+            fare-hunter-db-v3-
 
       # The calibration probe (scripts/probe_ignav.py) is deliberately NOT
       # run here any more: the API is calibrated and each probe run costs
@@ -68,9 +70,12 @@ jobs:
           # exists (Saudia doesn't serve LIS; its options interline), so
           # the airlines_include filter could never match anything.
           python hunt.py remove riyadh-lisbon-saudia || true
+          # Oct 9 -> 19, one day of give on both ends: --flex 1 shifts
+          # the whole trip (dep 8/9/10), --length-flex 1 lets the stay
+          # run 9/10/11 nights (return 18/19/20). 9 date pairs total.
           python hunt.py flight riyadh-lisbon \
-            --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
-            --flex 2 --target-eco 2100 --max-stops 1 \
+            --slice RUH:LIS:2026-10-09 --slice LIS:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --target-eco 2100 --max-stops 1 \
             --focus SV --focus EY --focus QR --focus EK \
             --focus LH --focus KL
 
