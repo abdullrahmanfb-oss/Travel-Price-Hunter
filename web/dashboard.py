@@ -287,10 +287,15 @@ def _one_window(w, var, rows, all_codes):
     quoted = {r["pos_code"] for r in rows}
     mx = max(r["amount_sar"] for r in rows)
     itin = rows[0]["itin_key"]
-    route_window = itin == "cheapest-any"
-    if route_window:
+    route_window = itin in ("cheapest-any", "gulf-any")
+    if itin == "cheapest-any":
         head = (f'cheapest for the route from each country — any airline, '
                 f'any date in the flex window · '
+                f'{len(rows)} of {len(all_codes)} markets quoted · '
+                f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
+    elif itin == "gulf-any":
+        head = (f'cheapest Gulf-airlines ticket from each country — any '
+                f'date in the flex window · '
                 f'{len(rows)} of {len(all_codes)} markets quoted · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     else:
