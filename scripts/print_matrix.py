@@ -19,21 +19,19 @@ def main():
         if w["product"] != "flight":
             continue
         for var in watches.variants(w):
-            rows = db.latest_matrix(w["id"], var)
-            if not rows:
-                continue
-            any_rows = True
-            head = rows[0]
-            stops = head.get("stops")
-            stops_txt = "direct" if stops == 0 else f"{stops} stop(s)"
-            print(f"\n=== {w['id']} · {var} · flight {head['itin_key']} "
-                  f"({head.get('carrier') or '?'}) · {stops_txt} ===")
-            for i, r in enumerate(rows):
-                tag = "  <- cheapest" if i == 0 else \
-                    ("  (home)" if r["pos_code"] == "SA" else "")
-                print(f"  {countries.label(r['pos_code']):<24} "
-                      f"{r['amount_sar']:>10,.0f} SAR   "
-                      f"{r['amount_native']:>12,.0f} {r['currency']}{tag}")
+            for rows in db.latest_matrix(w["id"], var):
+                any_rows = True
+                head = rows[0]
+                stops = head.get("stops")
+                stops_txt = "direct" if stops == 0 else f"{stops} stop(s)"
+                print(f"\n=== {w['id']} · {var} · flight {head['itin_key']} "
+                      f"({head.get('carrier') or '?'}) · {stops_txt} ===")
+                for i, r in enumerate(rows):
+                    tag = "  <- cheapest" if i == 0 else \
+                        ("  (home)" if r["pos_code"] == "SA" else "")
+                    print(f"  {countries.label(r['pos_code']):<24} "
+                          f"{r['amount_sar']:>10,.0f} SAR   "
+                          f"{r['amount_native']:>12,.0f} {r['currency']}{tag}")
     if not any_rows:
         print("No matrix rows yet — a market quote for the winning flight "
               "needs at least two markets pricing the same itinerary.")

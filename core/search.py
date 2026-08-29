@@ -16,7 +16,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from core import compare, watches
+from core import clock, compare, countries, watches
 from providers import registry
 from storage import db
 
@@ -70,11 +70,16 @@ def error_summary(limit=4):
 
 
 def warm_markets(all_pos, route):
-    """Warm = not cold. Re-probe candidates are folded back in here."""
+    """Warm = not cold. Re-probe candidates are folded back in here.
+
+    The home market is exempt from pruning: the Saudi-gap comparison and
+    the SA reference sample need an SA quote every scan, and SA rarely
+    wins on price — under the normal rule it would go cold and the gap
+    view would go blind."""
     reprobe = db.due_for_reprobe(route)
     if reprobe:
         db.mark_reprobed(route, reprobe)
-    cold = db.cold_markets(route)
+    cold = db.cold_markets(route) - {countries.HOME}
     warm = [p for p in all_pos if p["code"] not in cold]
     return warm or all_pos[:3]
 
@@ -84,7 +89,10 @@ def _build_req(watch, pos, variant, slice_set):
             "adults": watch.get("adults", 1)}
     if watch["product"] == "flight":
         base.update(slices=slice_set, cabin=variant,
-                    max_stops=watch.get("max_stops"))
+                    max_stops=watch.get("max_stops"),
+                    airlines=[a.strip().upper()
+                              for a in (watch.get("airlines") or "").split(",")
+                              if a.strip()])
     elif watch["product"] == "hotel":
         base.update(city=watch["city"], checkin=watch["checkin"],
                     checkout=watch["checkout"], rooms=watch.get("rooms", 1),
@@ -235,9 +243,21 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                            key=lambda x: x["sar_est"])
             db.record(watch["id"], product, variant, sa_offer)
         # same flight, every market: keep each market's quote for the
-        # winning itinerary so the dashboard can show them side by side
+        # winning itinerary so the dashboard can show them side by side.
+        # The winner may sit on a flex date only the deep pass priced, so
+        # also record the best offer on the REQUESTED dates (the probe
+        # variant) — every warm market quoted those in phase 1, which is
+        # what fills the full 28-row window at zero extra request cost.
         if product == "flight":
-            _record_matrix(watch, variant, best, ranked)
+            at = clock.iso()
+            _record_matrix(watch, variant, best, ranked, at)
+            probe_dates = [s["date"] for s in probe]
+            if best.get("dates") != probe_dates:
+                probe_best = min(
+                    (o for o in ranked if o.get("dates") == probe_dates),
+                    key=lambda x: x["sar_est"], default=None)
+                if probe_best is not None:
+                    _record_matrix(watch, variant, probe_best, ranked, at)
 
         best["alternatives"] = merged[1:4]
         results.append(best)
@@ -245,9 +265,10 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
     return results
 
 
-def _record_matrix(watch, variant, best, ranked):
-    """For the winning itinerary (same flight numbers + departure times),
-    record the cheapest quote from each market that priced it."""
+def _record_matrix(watch, variant, best, ranked, at=None):
+    """For one itinerary (same flight numbers + departure times — the
+    dedupe key already encodes the dates), record the cheapest quote from
+    each market that priced it."""
     keyfn = registry.KEYFN["flight"]
     try:
         key = keyfn(best)
@@ -269,11 +290,14 @@ def _record_matrix(watch, variant, best, ranked):
     if len(by_pos) < 2:
         return
     label = "+".join(s.get("flight", "?") for s in best.get("segments", []))
+    if best.get("dates"):
+        # several windows can coexist in one scan — the dates tell them apart
+        label += " · " + "/".join(best["dates"])
     db.record_matrix(
         watch["id"], variant, label, best.get("carrier"),
         [{"pos_code": pc, "currency": o["currency"],
           "amount_native": o["amount"], "amount_sar": o["sar_est"],
-          "stops": o.get("stops")} for pc, o in by_pos.items()])
+          "stops": o.get("stops")} for pc, o in by_pos.items()], at)
 
 
 def _detail(o):

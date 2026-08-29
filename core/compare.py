@@ -35,12 +35,19 @@ def apply_filters(offers, watch):
     out = []
     excl = {c.strip().upper() for c in (watch.get("exclude") or "").split(",")
             if c.strip()}
+    # airline-restricted watch (e.g. Saudia only): providers that support
+    # it filter server-side, but enforce it here too so a provider that
+    # ignores the request can't leak other carriers into this watch
+    only = {c.strip().upper() for c in (watch.get("airlines") or "").split(",")
+            if c.strip()}
     for o in offers:
         if product == "flight":
             if watch.get("max_stops") is not None \
                     and (o.get("stops") or 0) > watch["max_stops"]:
                 continue
             if o.get("carrier_code", "").upper() in excl:
+                continue
+            if only and o.get("carrier_code", "").upper() not in only:
                 continue
         elif product == "hotel":
             if watch.get("min_stars") and (o.get("stars") or 0) \
