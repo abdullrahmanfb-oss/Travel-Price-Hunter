@@ -57,10 +57,14 @@ def collect(cfg=None):
             if med is None:
                 badges.append(("quiet", why))
 
+            try:
+                det = json.loads(last.get("detail") or "{}")
+            except (TypeError, ValueError):
+                det = {}
             panels.append({
                 "variant": var, "current": cur, "median": med, "why": why,
                 "target": target, "history": hist, "last": last,
-                "gap": gap, "sa": sa, "badges": badges,
+                "gap": gap, "sa": sa, "badges": badges, "detail": det,
                 "countries": db.country_prices(w["id"], var, 7),
             })
             if gap is not None:
@@ -183,9 +187,27 @@ def _panel(w, p, chart_id):
         f'<span class="badge {BADGE_CLASS[k]}">{_e(t)}</span>'
         for k, t in p["badges"])
     last = p["last"]
+    det = p.get("detail") or {}
     src = (f'{_e(last["provider"])} · bought from '
            f'{_e(countries.label(last["pos_code"]))} '
            f'· {last["amount_native"]:,.0f} {_e(last["currency"])}')
+    if det.get("deep_link"):
+        via = det.get("link_via") or last["provider"]
+        src += (f' · <a class="booklink" href="{_e(det["deep_link"])}" '
+                f'target="_blank" rel="noopener">book via {_e(via)} ↗</a>')
+    # what the big number IS: total for the whole trip, party size, dates
+    trip = {"round": "round trip", "oneway": "one-way",
+            "multi": "multi-city"}.get(w.get("trip_type") or "",
+                                       w.get("trip_type") or "trip")
+    n = w.get("adults") or 1
+    meta = f'total for the {trip} · {n} adult{"s" if n > 1 else ""}'
+    dates = det.get("dates") or []
+    if dates:
+        meta += " · " + " → ".join(_e(d) for d in dates)
+    stops = det.get("stops")
+    if stops is not None:
+        meta += " · " + ("direct" if stops == 0 else f"{stops} stop(s)")
+    metaline = f'<div class="srcline">{meta}</div>'
     home = countries.label("SA")
     gapline = ""
     if p["gap"] is not None:
@@ -205,6 +227,7 @@ def _panel(w, p, chart_id):
   </div>
   <div class="price"><span class="num">{cur:,.0f}</span>
        <span class="cur">SAR</span> {delta}</div>
+  {metaline}
   <div class="srcline">{src}</div>
   {gapline}
   {_chart(p["history"], p["target"], chart_id)}
@@ -264,9 +287,20 @@ def _one_window(w, var, rows, all_codes):
     quoted = {r["pos_code"] for r in rows}
     mx = max(r["amount_sar"] for r in rows)
     itin = rows[0]["itin_key"]
-    carrier = rows[0].get("carrier") or ""
-    stops = rows[0].get("stops")
-    stops_txt = "direct" if stops == 0 else f'{stops} stop(s)'
+    route_window = itin == "cheapest-any"
+    if route_window:
+        head = (f'cheapest for the route from each country — any airline, '
+                f'any date in the flex window · '
+                f'{len(rows)} of {len(all_codes)} markets quoted · '
+                f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
+    else:
+        carrier = rows[0].get("carrier") or ""
+        stops = rows[0].get("stops")
+        stops_txt = "direct" if stops == 0 else f'{stops} stop(s)'
+        head = (f'same exact flight everywhere: <span class="mx-itin">'
+                f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt} · '
+                f'quoted in {len(rows)} of {len(all_codes)} markets · '
+                f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     body = []
     for i, r in enumerate(rows):
         chips = ('<span class="badge b-good">cheapest</span>'
@@ -277,6 +311,11 @@ def _one_window(w, var, rows, all_codes):
         native = "" if r["currency"] == "SAR" else \
             f' <span class="mx-native">({r["amount_native"]:,.0f} ' \
             f'{_e(r["currency"])})</span>'
+        if route_window and r.get("flight"):
+            # each market's price may come from a different flight/date
+            native += (f' <span class="mx-native">· {_e(r["flight"])}'
+                       f'{" · " + _e(r["dates"]) if r.get("dates") else ""}'
+                       f'</span>')
         body.append(
             f'<div class="bc-row{" home" if r["pos_code"] == "SA" else ""}">'
             f'<span class="bc-name">'
@@ -296,10 +335,7 @@ def _one_window(w, var, rows, all_codes):
         f'<article class="card">'
         f'<header class="card-head"><h3>{_e(w["id"])}</h3>'
         f'<span class="variant">{_e(var)}</span></header>'
-        f'<div class="srcline">flight <span class="mx-itin">'
-        f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt} · '
-        f'quoted in {len(rows)} of {len(all_codes)} markets · '
-        f'{_e(rows[0]["seen_at"][:10])} · SAR</div>'
+        f'<div class="srcline">{head}</div>'
         f'<div class="bycountry">{"".join(body)}</div></article>')
 
 
@@ -426,10 +462,14 @@ def render(cfg=None) -> str:
 
 <section><h2>Watches</h2><div class="grid">{cards}</div></section>
 
-<section><h2>Same flight, every market</h2>
-<p class="note">The exact same flight (same flight numbers, same dates),
-priced from each point of sale. Markets showing — didn't quote this
-flight in the latest scan. Prices normalised to SAR.</p>
+<section><h2>Price by country</h2>
+<p class="note">All prices are totals for the whole trip, in SAR. The
+first window per cabin answers "what's the cheapest way to fly this
+route from each country?" — any airline, any date in the flex window,
+with the flight and dates named on each row. The windows after it
+compare one exact flight across markets (same flight numbers and
+dates), which is the cleanest view of the point-of-sale gap. Markets
+showing — didn't quote in the latest scan.</p>
 {_matrix_windows(d["cards"])}</section>
 
 <section><h2>Saudi price gap</h2>

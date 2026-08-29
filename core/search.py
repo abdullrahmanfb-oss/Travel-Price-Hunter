@@ -240,6 +240,9 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
 
         best = merged[0]
         best["label"] = compare.label_of(best)
+        # fetch a real booking link for the number we surface — the search
+        # response carries none; this is one extra (billed) call per cabin
+        _attach_link(best, providers)
         best["detail"] = _detail(best)
 
         # market edge vs the home market
@@ -274,15 +277,11 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         # what fills the full 28-row window at zero extra request cost.
         if product == "flight":
             at = clock.iso()
+            # headline window: the cheapest way to fly the ROUTE from each
+            # market — any airline, any flex date; per-row flight + dates
+            # say what each price is for
+            _record_route_matrix(watch, variant, ranked, at)
             recorded = {_record_matrix(watch, variant, best, ranked, at)}
-            probe_dates = [s["date"] for s in probe]
-            if best.get("dates") != probe_dates:
-                probe_best = min(
-                    (o for o in ranked if o.get("dates") == probe_dates),
-                    key=lambda x: x["sar_est"], default=None)
-                if probe_best is not None:
-                    recorded.add(_record_matrix(watch, variant, probe_best,
-                                                ranked, at))
             # Focus carriers (e.g. Saudia): their best itinerary gets its
             # own window even when it never wins. Reuses offers this scan
             # already holds — zero extra requests. A hard airlines filter
@@ -303,6 +302,47 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         results.append(best)
 
     return results
+
+
+def _attach_link(o, providers):
+    """Booking links are a separate provider call; only fetch one for an
+    offer the user will actually see. Failure never blocks the scan."""
+    if o.get("deep_link"):
+        return
+    pr = next((p for p in providers if p.NAME == o["provider"]), None)
+    fn = getattr(pr, "booking_link", None)
+    if fn is None:
+        return
+    LIMITER.wait()
+    try:
+        res = fn(o.get("offer_id"))
+    except Exception as e:
+        ERRORS[f'{o["provider"]}: link {_reason(e)}'] += 1
+        return
+    if res:
+        o["deep_link"], o["link_via"] = res
+
+
+def _record_route_matrix(watch, variant, ranked, at):
+    """Each market's cheapest offer for the route, whatever flight or
+    flex date achieves it — the comparison the user actually shops with."""
+    by_pos = {}
+    for o in ranked:
+        pc = o["pos"]["code"]
+        cur = by_pos.get(pc)
+        if cur is None or o["sar_est"] < cur["sar_est"]:
+            by_pos[pc] = o
+    if not by_pos:
+        return
+    db.record_matrix(
+        watch["id"], variant, "cheapest-any", None,
+        [{"pos_code": pc, "currency": o["currency"],
+          "amount_native": o["amount"], "amount_sar": o["sar_est"],
+          "stops": o.get("stops"),
+          "flight": "+".join(s.get("flight", "?")
+                             for s in o.get("segments", []))[:48],
+          "dates": "/".join(o.get("dates") or [])}
+         for pc, o in by_pos.items()], at)
 
 
 def _record_matrix(watch, variant, best, ranked, at=None,
@@ -356,4 +396,5 @@ def _detail(o):
                 "description": o.get("description")}
     return {"stops": o.get("stops"), "dates": o.get("dates"),
             "segments": o.get("segments", [])[:8],
-            "deep_link": o.get("deep_link")}
+            "deep_link": o.get("deep_link"),
+            "link_via": o.get("link_via")}

@@ -22,16 +22,27 @@ def main():
             for rows in db.latest_matrix(w["id"], var):
                 any_rows = True
                 head = rows[0]
-                stops = head.get("stops")
-                stops_txt = "direct" if stops == 0 else f"{stops} stop(s)"
-                print(f"\n=== {w['id']} · {var} · flight {head['itin_key']} "
-                      f"({head.get('carrier') or '?'}) · {stops_txt} ===")
+                if head["itin_key"] == "cheapest-any":
+                    print(f"\n=== {w['id']} · {var} · CHEAPEST PER MARKET "
+                          f"(any flight, any flex date) ===")
+                else:
+                    stops = head.get("stops")
+                    stops_txt = "direct" if stops == 0 \
+                        else f"{stops} stop(s)"
+                    print(f"\n=== {w['id']} · {var} · same flight "
+                          f"{head['itin_key']} "
+                          f"({head.get('carrier') or '?'}) · {stops_txt} ===")
                 for i, r in enumerate(rows):
                     tag = "  <- cheapest" if i == 0 else \
                         ("  (home)" if r["pos_code"] == "SA" else "")
+                    via = ""
+                    if head["itin_key"] == "cheapest-any" and r.get("flight"):
+                        via = f"   {r['flight']}" + \
+                            (f" {r['dates']}" if r.get("dates") else "")
                     print(f"  {countries.label(r['pos_code']):<24} "
                           f"{r['amount_sar']:>10,.0f} SAR   "
-                          f"{r['amount_native']:>12,.0f} {r['currency']}{tag}")
+                          f"{r['amount_native']:>12,.0f} "
+                          f"{r['currency']}{via}{tag}")
     if not any_rows:
         print("No matrix rows yet — a market quote for the winning flight "
               "needs at least two markets pricing the same itinerary.")
