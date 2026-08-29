@@ -131,8 +131,11 @@ def search(req: dict) -> list[dict]:
     data = r.json()
 
     if os.environ.get("IGNAV_DEBUG"):
-        # offer count answers "is the max_results cap trimming anything?"
-        print(f"[ignav] {market} {slices[0]['date']}: "
+        # offer count answers "is the max_results cap trimming anything?";
+        # inc= marks airline-restricted carrier probes
+        inc = "+".join(payload.get("airlines_include") or [])
+        print(f"[ignav] {market} {slices[0]['date']}"
+              f"{' inc=' + inc if inc else ''}: "
               f"{len(_extract(data))} offers · "
               f"raw response keys: {_shape(data)}", file=sys.stderr)
 

@@ -138,7 +138,7 @@ def conn():
     # CREATE IF NOT EXISTS never alters an existing table, so columns added
     # after a DB was first created need an explicit migration.
     for col in ("airlines TEXT", "focus_airlines TEXT",
-                "length_flex INTEGER"):
+                "length_flex INTEGER", "probe_airlines TEXT"):
         try:
             c.execute(f"ALTER TABLE watches ADD COLUMN {col}")
         except sqlite3.OperationalError:

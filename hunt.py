@@ -123,6 +123,8 @@ def cmd_flight(a):
                     if a.airline else None,
         "focus_airlines": ",".join(x.strip().upper() for x in a.focus)
                           if a.focus else None,
+        "probe_airlines": ",".join(x.strip().upper() for x in a.probe)
+                          if a.probe else None,
         "date_model": _date_model(a), "flex_days": a.flex or 0,
         "length_flex": a.length_flex or 0,
         "month": a.month, "rolling_days": a.rolling, "nights": a.nights,
@@ -289,6 +291,10 @@ def main():
     f.add_argument("--focus", action="append",
                    help="extra market window for this carrier's best "
                         "itinerary, e.g. SV (repeatable; no extra requests)")
+    f.add_argument("--probe", action="append",
+                   help="dedicated airline-restricted searches for this "
+                        "carrier on the requested dates (repeatable; "
+                        "~4 extra requests each per scan)")
     f.set_defaults(func=cmd_flight)
 
     h = sub.add_parser("hotel")

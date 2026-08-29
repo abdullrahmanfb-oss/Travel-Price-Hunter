@@ -246,7 +246,37 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                 for f in as_completed(futs):
                     p2 += f.result()
 
-        ranked = compare.rank(compare.apply_filters(p1 + p2, watch), rates)
+        # ---- carrier probes ----
+        # A general round-trip response carries only ~10 curated combos
+        # (measured), dominated by cheap long interlines — short hub
+        # pairings (all-QR via DOH, all-EY via AUH...) often never reach
+        # the pool. An airlines_include-restricted search returns ~10
+        # combos ALL on that carrier, so probe each requested carrier on
+        # the REQUESTED dates from home + the best-known market and let
+        # the offers flow through the normal filter/rank/window path.
+        p3 = []
+        probes = [c.strip().upper()
+                  for c in (watch.get("probe_airlines") or "").split(",")
+                  if c.strip()]
+        if probes and product == "flight":
+            probe_pos = [p for p in warm if p["code"] == "SA"][:1]
+            wins = [w["pos_code"] for w in db.market_wins(30)
+                    if w["pos_code"] != "SA"]
+            extra = next((p for p in warm if p["code"] in wins[:1]), None) \
+                or next((p for p in warm if p["code"] != "SA"), None)
+            if extra:
+                probe_pos.append(extra)
+            with ThreadPoolExecutor(workers) as ex:
+                futs = [ex.submit(_one, dict(watch, airlines=code), pr,
+                                  pos, variant, base_probe, route)
+                        for code in probes for pos in probe_pos
+                        for pr in providers
+                        if getattr(pr, "NAME", "") == "ignav"]
+                for f in as_completed(futs):
+                    p3 += f.result()
+
+        ranked = compare.rank(compare.apply_filters(p1 + p2 + p3, watch),
+                              rates)
         merged = registry.merge(ranked, product)
         merged = sorted(merged, key=lambda x: (not x["clean"], x["sar_est"]))
         if not merged:
@@ -298,6 +328,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
             _record_route_matrix(watch, variant, ranked, at, providers)
             _record_gulf_matrix(watch, variant, ranked, at, providers)
             _record_pure_matrix(watch, variant, ranked, at, providers)
+            _record_fastest_matrix(watch, variant, ranked, at, providers)
             recorded = {_record_matrix(watch, variant, best, ranked, at)}
             # Focus carriers (e.g. Saudia): their best itinerary gets its
             # own window even when it never wins. Reuses offers this scan
@@ -488,6 +519,26 @@ def _record_pure_matrix(watch, variant, ranked, at, providers):
         if rows:
             db.record_matrix(watch["id"], variant, f"pure-{code}", None,
                              rows, at)
+
+
+def _record_fastest_matrix(watch, variant, ranked, at, providers):
+    """One window (label 'fastest-any'): each market's SHORTEST trip at
+    the cheapest fare that buys it — among that market's offers with a
+    known duration, take those within 60 minutes of the market's
+    fastest, and record the cheapest of them. links=0: the constructed
+    Search fallback covers every row."""
+    by_pos = {}
+    for o in ranked:
+        if o.get("duration_min"):
+            by_pos.setdefault(o["pos"]["code"], []).append(o)
+    rows = []
+    for pc, offers in by_pos.items():
+        fastest = min(o["duration_min"] for o in offers)
+        band = [o for o in offers if o["duration_min"] <= fastest + 60]
+        rows.append(_matrix_row(pc, min(band, key=lambda x: x["sar_est"])))
+    if rows:
+        db.record_matrix(watch["id"], variant, "fastest-any", None,
+                         rows, at)
 
 
 def _record_matrix(watch, variant, best, ranked, at=None,

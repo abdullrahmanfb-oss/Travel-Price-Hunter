@@ -290,8 +290,8 @@ def _one_window(w, var, rows, all_codes):
     quoted = {r["pos_code"] for r in rows}
     mx = max(r["amount_sar"] for r in rows)
     itin = rows[0]["itin_key"]
-    route_window = itin in ("cheapest-any", "gulf-any") or \
-        itin.startswith("pure-")
+    route_window = itin in ("cheapest-any", "gulf-any", "fastest-any") \
+        or itin.startswith("pure-")
     if itin == "cheapest-any":
         head = (f'cheapest for the route from each country — any airline, '
                 f'any date in the flex window · '
@@ -300,6 +300,11 @@ def _one_window(w, var, rows, all_codes):
     elif itin == "gulf-any":
         head = (f'cheapest Gulf-airlines ticket from each country — any '
                 f'date in the flex window · '
+                f'{len(rows)} of {len(all_codes)} markets quoted · '
+                f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
+    elif itin == "fastest-any":
+        head = (f'shortest trip from each country, at the cheapest fare '
+                f'that buys it · '
                 f'{len(rows)} of {len(all_codes)} markets quoted · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     elif itin.startswith("pure-"):
@@ -505,6 +510,8 @@ def _view_data(cards):
                     views.setdefault(var, rows)
                 elif key == "gulf-any":
                     views.setdefault(f"gulf-{var}", rows)
+                elif key == "fastest-any":
+                    views.setdefault(f"fast-{var}", rows)
                 elif key.startswith("pure-"):
                     # one window per carrier — concat them all so the
                     # One-airline view holds every (market, airline)
@@ -693,15 +700,26 @@ def _views_section(views, route=None):
           f'{_view_table(views.get("pure-economy"), route)}'
           f'<h3 class="vt-sub">Business</h3>'
           f'{_view_table(views.get("pure-business"), route)}')
+    ee = (f'<h3 class="vt-sub">Economy</h3>'
+          f'{_view_table(views.get("fast-economy"), route)}'
+          f'<h3 class="vt-sub">Business</h3>'
+          f'{_view_table(views.get("fast-business"), route)}')
     return f'''<section>
 {_filter_bar(views)}
 <nav class="viewbar" role="tablist">
-  <button class="vbtn active" data-view="view-a">A · Economy, all markets</button>
+  <button class="vbtn active" data-view="view-e">E · Shortest trips</button>
+  <button class="vbtn" data-view="view-a">A · Economy, all markets</button>
   <button class="vbtn" data-view="view-b">B · Gulf airlines</button>
   <button class="vbtn" data-view="view-c">C · Business, all markets</button>
   <button class="vbtn" data-view="view-d">D · One airline</button>
 </nav>
-<div id="view-a" class="view">{a}</div>
+<div id="view-e" class="view">
+  <p class="note">Each country's SHORTEST trip at the cheapest fare
+  that buys it (options within an hour of that country's fastest count
+  as equally short — the cheapest of them wins the row). Sort by
+  "Cheapest" to rank these short tickets by price; airline chips
+  narrow to one carrier.</p>{ee}</div>
+<div id="view-a" class="view" hidden>{a}</div>
 <div id="view-b" class="view" hidden>
   <p class="note">Cheapest tickets that include a Gulf carrier (Saudia,
   flynas, flyadeal, Emirates, flydubai, Etihad, Air Arabia, Qatar
