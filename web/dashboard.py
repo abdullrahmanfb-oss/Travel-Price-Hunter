@@ -290,7 +290,8 @@ def _one_window(w, var, rows, all_codes):
     quoted = {r["pos_code"] for r in rows}
     mx = max(r["amount_sar"] for r in rows)
     itin = rows[0]["itin_key"]
-    route_window = itin in ("cheapest-any", "gulf-any", "pure-any")
+    route_window = itin in ("cheapest-any", "gulf-any") or \
+        itin.startswith("pure-")
     if itin == "cheapest-any":
         head = (f'cheapest for the route from each country — any airline, '
                 f'any date in the flex window · '
@@ -301,9 +302,11 @@ def _one_window(w, var, rows, all_codes):
                 f'date in the flex window · '
                 f'{len(rows)} of {len(all_codes)} markets quoted · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
-    elif itin == "pure-any":
-        head = (f'cheapest one-airline ticket from each country — every '
-                f'segment on the same carrier · '
+    elif itin.startswith("pure-"):
+        code = itin[5:]
+        name = AIRLINE_NAMES.get(code, code)
+        head = (f'cheapest all-{_e(name)} ticket from each country — every '
+                f'segment on {_e(name)} · '
                 f'{len(rows)} of {len(all_codes)} markets quoted · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     else:
@@ -502,9 +505,15 @@ def _view_data(cards):
                     views.setdefault(var, rows)
                 elif key == "gulf-any":
                     views.setdefault(f"gulf-{var}", rows)
-                elif key == "pure-any":
-                    views.setdefault(f"pure-{var}", rows)
+                elif key.startswith("pure-"):
+                    # one window per carrier — concat them all so the
+                    # One-airline view holds every (market, airline)
+                    # pair and the airline chips slice it
+                    views.setdefault(f"pure-{var}", []).extend(rows)
         break                      # one flight watch drives the overview
+    for k in list(views):
+        if k.startswith("pure-"):
+            views[k] = sorted(views[k], key=lambda r: r["amount_sar"])
     return views, route
 
 
@@ -616,7 +625,9 @@ def _view_table(rows, route=None):
             f'{native}</span>'
             f'<span>{book}</span></div>')
     out.append('<div class="vt-row vt-none" hidden>No tickets match '
-               'these filters — loosen the airline or price filter.</div>')
+               'these filters in THIS view — airline-specific tickets '
+               'live in view D · One airline; or loosen the filters.'
+               '</div>')
     out.append('</div>')
     return "".join(out)
 
@@ -625,17 +636,23 @@ def _filter_bar(views):
     """Sort / airline / max-price controls over the view tables. Pure
     client-side — filters what the last scan already found, no extra
     API calls."""
-    codes, prices = set(), []
+    codes, prices, durs = set(), [], []
     for rows in views.values():
         for r in rows or []:
             codes.update(_row_codes(r.get("flight")))
             prices.append(r["amount_sar"])
+            if r.get("duration_min"):
+                durs.append(int(r["duration_min"]))
     if not prices:
         return ""
     lo = int(min(prices) // 100 * 100)
     hi = int(-(-max(prices) // 100) * 100)
     if hi <= lo:
         hi = lo + 100
+    dlo = (min(durs) // 60) if durs else 0
+    dhi = (-(-max(durs) // 60)) if durs else 48
+    if dhi <= dlo:
+        dhi = dlo + 1
     chips = "".join(
         f'<button class="fbtn airbtn" data-air="{_e(c)}">'
         f'{_e(AIRLINE_NAMES.get(c, c))}</button>'
@@ -655,6 +672,11 @@ def _filter_bar(views):
     <input type="range" id="pmax" min="{lo}" max="{hi}" value="{hi}"
            step="50">
     <span id="pmaxlbl">no limit</span>
+  </div>
+  <div class="fgroup fprice"><span class="flbl">Max travel time</span>
+    <input type="range" id="dmax" min="{dlo}" max="{dhi}" value="{dhi}"
+           step="1">
+    <span id="dmaxlbl">no limit</span>
   </div>
   <button class="fbtn freset" id="freset">Reset</button>
 </div>'''
@@ -689,8 +711,9 @@ def _views_section(views, route=None):
 <div id="view-d" class="view" hidden>
   <p class="note">Every segment on the SAME airline — no airline change
   at the connection (e.g. Riyadh→Doha→Lisbon all on Qatar Airways).
-  Each country's row is its cheapest such ticket; tap an airline chip
-  above to keep only that carrier.</p>{dd}</div>
+  One row per country PER airline: tap an airline chip above to see
+  that carrier's price from every country, and "Shortest trip" to rank
+  by total travel time.</p>{dd}</div>
 <p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
 3 cheapest rows of each view). <b>Search ↗</b> = every other row: opens
 Google Flights priced from that row's country with that row's dates —
@@ -1062,6 +1085,9 @@ function applyFilters() {
   var pmax = document.getElementById("pmax");
   var noLimit = !pmax || +pmax.value >= +pmax.max;
   var lim = pmax ? +pmax.value : Infinity;
+  var dmax = document.getElementById("dmax");
+  var noDur = !dmax || +dmax.value >= +dmax.max;
+  var dlim = dmax ? +dmax.value * 60 : Infinity;
   document.querySelectorAll(".view .vt").forEach(function (t) {
     var rows = Array.prototype.slice.call(
       t.querySelectorAll(".vt-row:not(.vt-head):not(.vt-none)"));
@@ -1073,7 +1099,9 @@ function applyFilters() {
         codes.some(function (c) { return selAir.has(c); });
       var okPure = !pureOnly || codes.length === 1;
       var okPrice = noLimit || +r.dataset.sar <= lim;
-      r.hidden = !(okAir && okPure && okPrice);
+      // unknown durations only pass while no time limit is set
+      var okDur = noDur || (r.dataset.dur && +r.dataset.dur <= dlim);
+      r.hidden = !(okAir && okPure && okPrice && okDur);
       if (!r.hidden) vis.push(r);
     });
     vis.sort(function (a, b) {
@@ -1126,6 +1154,17 @@ if (pmaxEl) {
   pmaxEl.addEventListener("input", function () { pmaxText(); applyFilters(); });
   pmaxText();
 }
+var dmaxEl = document.getElementById("dmax");
+var dmaxLbl = document.getElementById("dmaxlbl");
+function dmaxText() {
+  if (!dmaxEl) return;
+  dmaxLbl.textContent = +dmaxEl.value >= +dmaxEl.max ? "no limit"
+    : "\\u2264 " + dmaxEl.value + "h round trip";
+}
+if (dmaxEl) {
+  dmaxEl.addEventListener("input", function () { dmaxText(); applyFilters(); });
+  dmaxText();
+}
 var freset = document.getElementById("freset");
 if (freset) freset.addEventListener("click", function () {
   selAir.clear();
@@ -1139,6 +1178,7 @@ if (freset) freset.addEventListener("click", function () {
     x.classList.toggle("active", !x.dataset.air);
   });
   if (pmaxEl) { pmaxEl.value = pmaxEl.max; pmaxText(); }
+  if (dmaxEl) { dmaxEl.value = dmaxEl.max; dmaxText(); }
   applyFilters();
 });
 applyFilters();

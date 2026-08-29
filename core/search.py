@@ -418,12 +418,14 @@ def _matrix_row(pc, o):
             "dates": "/".join(o.get("dates") or [])}
 
 
-def _record_best_per_market(watch, variant, offers, label, at, providers):
-    """One window: each market's cheapest offer from `offers`. The THREE
-    cheapest rows get booking links fetched (one billed call each) — the
-    rows the user would actually book. Windows share offer objects, so an
-    offer that tops several windows is only billed once, and _attach_link
-    skips offers that already carry a link."""
+def _record_best_per_market(watch, variant, offers, label, at, providers,
+                            links=3):
+    """One window: each market's cheapest offer from `offers`. The
+    `links` cheapest rows get booking links fetched (one billed call
+    each) — the rows the user would actually book; links=0 relies on
+    the dashboard's constructed Search fallback instead. Windows share
+    offer objects, so an offer that tops several windows is only billed
+    once, and _attach_link skips offers that already carry a link."""
     by_pos = {}
     for o in offers:
         pc = o["pos"]["code"]
@@ -432,7 +434,7 @@ def _record_best_per_market(watch, variant, offers, label, at, providers):
             by_pos[pc] = o
     if not by_pos:
         return
-    for o in sorted(by_pos.values(), key=lambda x: x["sar_est"])[:3]:
+    for o in sorted(by_pos.values(), key=lambda x: x["sar_est"])[:links]:
         _attach_link(o, providers)
     db.record_matrix(watch["id"], variant, label, None,
                      [_matrix_row(pc, o) for pc, o in by_pos.items()], at)
@@ -455,13 +457,20 @@ def _record_gulf_matrix(watch, variant, ranked, at, providers):
 
 
 def _record_pure_matrix(watch, variant, ranked, at, providers):
-    """Same, restricted to SINGLE-carrier itineraries (every segment on
-    one airline — no airline change at the connection) — feeds the
-    dashboard's 'One airline' view."""
-    pure = [o for o in ranked if len(_seg_carriers(o)) == 1]
-    if pure:
-        _record_best_per_market(watch, variant, pure, "pure-any", at,
-                                providers)
+    """One window PER CARRIER of that carrier's cheapest single-carrier
+    itinerary from each market (labels 'pure-QR', 'pure-EY', ...) —
+    feeds the dashboard's 'One airline' view, where the airline chips
+    then mean 'pure Qatar from every country'. No billed link calls
+    (links=0): the dashboard's constructed Search fallback covers every
+    row, so this scales to any number of carriers for free."""
+    by_carrier = {}
+    for o in ranked:
+        codes = _seg_carriers(o)
+        if len(codes) == 1:
+            by_carrier.setdefault(next(iter(codes)), []).append(o)
+    for code, offers in by_carrier.items():
+        _record_best_per_market(watch, variant, offers, f"pure-{code}",
+                                at, providers, links=0)
 
 
 def _record_matrix(watch, variant, best, ranked, at=None,
