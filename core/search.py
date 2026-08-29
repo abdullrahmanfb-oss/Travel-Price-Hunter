@@ -12,6 +12,7 @@ pruned in July gets another look in August, because fares are re-filed
 seasonally and permanent pruning loses genuine wins.
 """
 import collections
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -76,6 +77,11 @@ def warm_markets(all_pos, route):
     the SA reference sample need an SA quote every scan, and SA rarely
     wins on price — under the normal rule it would go cold and the gap
     view would go blind."""
+    if os.environ.get("FULL_SWEEP") == "1":
+        # forced full sweep (workflow_dispatch input): quote every
+        # configured market this run; winners still bump market stats,
+        # so a sweep refreshes which markets stay warm afterwards
+        return list(all_pos)
     reprobe = db.due_for_reprobe(route)
     if reprobe:
         db.mark_reprobed(route, reprobe)

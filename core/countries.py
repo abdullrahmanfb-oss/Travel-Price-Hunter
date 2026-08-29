@@ -15,6 +15,12 @@ NAME = {
     "PL": "Poland", "RO": "Romania", "HU": "Hungary", "ZA": "South Africa",
     "JP": "Japan", "KR": "South Korea", "SG": "Singapore",
     "MY": "Malaysia", "TH": "Thailand", "ID": "Indonesia",
+    # cheap-POS set additions
+    "NG": "Nigeria", "BD": "Bangladesh", "NP": "Nepal", "VN": "Vietnam",
+    "UA": "Ukraine", "KE": "Kenya", "TZ": "Tanzania", "UG": "Uganda",
+    "GH": "Ghana", "TN": "Tunisia", "PH": "Philippines", "KH": "Cambodia",
+    "BO": "Bolivia", "PY": "Paraguay", "CO": "Colombia", "PE": "Peru",
+    "BR": "Brazil", "MX": "Mexico", "RU": "Russia",
 }
 
 HOME = "SA"

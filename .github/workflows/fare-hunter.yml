@@ -5,6 +5,11 @@ name: Fare Hunter
 # keys live in the repo's encrypted Actions secrets, never in code or chat.
 on:
   workflow_dispatch:          # the "Run workflow" button (manual)
+    inputs:
+      full_sweep:
+        description: "Quote ALL configured markets this run (ignores pruning; ~120 requests)"
+        type: boolean
+        default: false
   schedule:
     - cron: '19 9 * * *'      # daily 09:19 UTC ≈ 12:19 PM Riyadh — keeps the
                               # scan inside Ignav's free 1,000 requests/month
@@ -47,6 +52,8 @@ jobs:
         env:
           IGNAV_TOKEN: ${{ secrets.IGNAV_TOKEN }}
           IGNAV_DEBUG: "1"
+          # set by the manual full_sweep input; empty on scheduled runs
+          FULL_SWEEP: ${{ inputs.full_sweep == true && '1' || '' }}
           AMADEUS_KEY: ${{ secrets.AMADEUS_KEY }}
           AMADEUS_SECRET: ${{ secrets.AMADEUS_SECRET }}
           # Set this secret to https://api.amadeus.com once you move your
