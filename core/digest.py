@@ -64,6 +64,8 @@ def _offer_block(w, o, variant, edge_threshold=25.0):
     else:
         dates = " / ".join(d.get("dates") or [])
         extra = f'{d.get("stops")} stop(s) · {dates}'
+        if d.get("via"):
+            extra += f' · {d["via"]}'
 
     lines = [
         f'  {variant:<9} {o["sar_est"]:>8.0f} SAR{delta}{mark}',

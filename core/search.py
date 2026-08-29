@@ -503,5 +503,6 @@ def _detail(o):
     return {"stops": o.get("stops"), "dates": o.get("dates"),
             "segments": o.get("segments", [])[:8],
             "duration_min": o.get("duration_min"),
+            "via": _via_txt(o),
             "deep_link": o.get("deep_link"),
             "link_via": o.get("link_via")}
