@@ -452,6 +452,31 @@ def _stops_txt(r):
     return "direct" if s == 0 else f'{s} stop{"s" if s > 1 else ""}'
 
 
+# Readable names for the airline filter chips; fallback is the raw code.
+AIRLINE_NAMES = {
+    "SV": "Saudia", "XY": "flynas", "F3": "flyadeal", "EK": "Emirates",
+    "FZ": "flydubai", "EY": "Etihad", "G9": "Air Arabia", "QR": "Qatar",
+    "GF": "Gulf Air", "J9": "Jazeera", "KU": "Kuwait", "WY": "Oman Air",
+    "A3": "Aegean", "TK": "Turkish", "AF": "Air France", "KL": "KLM",
+    "LH": "Lufthansa", "TP": "TAP", "AZ": "ITA", "BA": "British",
+    "MS": "EgyptAir", "RJ": "Royal Jordanian", "LX": "Swiss",
+    "OS": "Austrian", "IB": "Iberia", "UX": "Air Europa", "W6": "Wizz",
+    "PC": "Pegasus", "SN": "Brussels",
+}
+
+
+def _row_codes(flight):
+    """Carrier codes on a ticket, from its flight label
+    ('A3953+A3722+EY100+EY559' -> ['A3', 'EY']). First two chars of the
+    designator — never strip digits (A3, W6)."""
+    out = []
+    for f in (flight or "").split("+"):
+        f = f.strip()
+        if len(f) >= 3 and f[:2].upper() not in out:
+            out.append(f[:2].upper())
+    return out
+
+
 def _view_data(cards):
     """Pull the four view row-sets (cheapest-any / gulf-any per cabin)
     from the latest scan's matrix windows. Rows arrive cheapest-first."""
@@ -536,8 +561,12 @@ def _view_table(rows):
                if r.get("via") else "")
         stops = (f'<br><small>{_e(_stops_txt(r))}</small>'
                  if _stops_txt(r) else "")
+        dur = r.get("duration_min")
         out.append(
-            f'<div class="vt-row{" best" if i == 0 else ""}">'
+            f'<div class="vt-row{" best" if i == 0 else ""}" '
+            f'data-sar="{r["amount_sar"]:.0f}" '
+            f'data-dur="{int(dur) if dur else ""}" '
+            f'data-air="{_e(" ".join(_row_codes(r.get("flight"))))}">'
             f'<span class="vt-mkt">{_e(countries.label(r["pos_code"]))} '
             f'{chips}</span>'
             f'<span>{_e(r.get("carrier_name") or "—")}</span>'
@@ -547,8 +576,47 @@ def _view_table(rows):
             f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR<br>'
             f'{native}</span>'
             f'<span>{book}</span></div>')
+    out.append('<div class="vt-row vt-none" hidden>No tickets match '
+               'these filters — loosen the airline or price filter.</div>')
     out.append('</div>')
     return "".join(out)
+
+
+def _filter_bar(views):
+    """Sort / airline / max-price controls over the view tables. Pure
+    client-side — filters what the last scan already found, no extra
+    API calls."""
+    codes, prices = set(), []
+    for rows in views.values():
+        for r in rows or []:
+            codes.update(_row_codes(r.get("flight")))
+            prices.append(r["amount_sar"])
+    if not prices:
+        return ""
+    lo = int(min(prices) // 100 * 100)
+    hi = int(-(-max(prices) // 100) * 100)
+    if hi <= lo:
+        hi = lo + 100
+    chips = "".join(
+        f'<button class="fbtn airbtn" data-air="{_e(c)}">'
+        f'{_e(AIRLINE_NAMES.get(c, c))}</button>'
+        for c in sorted(codes, key=lambda c: AIRLINE_NAMES.get(c, c)))
+    return f'''<div class="filterbar">
+  <div class="fgroup"><span class="flbl">Sort</span>
+    <button class="fbtn sortbtn active" data-sort="sar">Cheapest</button>
+    <button class="fbtn sortbtn" data-sort="dur">Shortest trip</button>
+  </div>
+  <div class="fgroup"><span class="flbl">Airline</span>
+    <button class="fbtn airbtn active" data-air="">All</button>
+    {chips}
+  </div>
+  <div class="fgroup fprice"><span class="flbl">Max price</span>
+    <input type="range" id="pmax" min="{lo}" max="{hi}" value="{hi}"
+           step="50">
+    <span id="pmaxlbl">no limit</span>
+  </div>
+  <button class="fbtn freset" id="freset">Reset</button>
+</div>'''
 
 
 def _views_section(views):
@@ -559,6 +627,7 @@ def _views_section(views):
          f'{_view_table(views.get("gulf-business"))}')
     c = _view_table(views.get("business"))
     return f'''<section>
+{_filter_bar(views)}
 <nav class="viewbar" role="tablist">
   <button class="vbtn active" data-view="view-a">A · Economy, all markets</button>
   <button class="vbtn" data-view="view-b">B · Gulf airlines</button>
@@ -873,6 +942,27 @@ footer { margin-top: 36px; padding-top: 14px;
   .vt-mkt { grid-column: 1 / -1; font-weight: 600; }
 }
 
+/* --- filter bar --- */
+.filterbar { display: flex; flex-wrap: wrap; gap: 10px 18px;
+  align-items: center; margin: 20px 0 0; padding: 12px 14px;
+  border: 1px solid var(--hair); border-radius: 12px;
+  background: var(--card); }
+.fgroup { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.flbl { font: 600 11px/1 "IBM Plex Mono", monospace; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
+.fbtn { font: 600 12px/1 "IBM Plex Sans", sans-serif; padding: 7px 11px;
+  border-radius: 999px; border: 1px solid var(--hair);
+  background: var(--card); color: var(--ink-2); cursor: pointer; }
+.fbtn.active { background: var(--accent-soft); border-color: var(--accent);
+  color: var(--ink); }
+.fprice input[type=range] { width: 140px; accent-color: var(--accent); }
+#pmaxlbl { font: 500 12px/1 "IBM Plex Mono", monospace;
+  color: var(--ink-2); min-width: 86px; }
+.freset { border-style: dashed; }
+.vt-row[hidden] { display: none !important; }
+.vt-row.top { background: var(--good-soft); }
+.vt-row.vt-none { display: block; color: var(--ink-3); font-size: 13px; }
+
 /* --- collapsed detail sections --- */
 details.more { margin-top: 22px; border: 1px solid var(--hair);
   border-radius: 12px; background: var(--card); padding: 0 16px; }
@@ -907,6 +997,85 @@ document.querySelectorAll(".k-book").forEach(function (s) {
     window.open(s.dataset.href, "_blank", "noopener");
   });
 });
+
+// --- ticket filters: sort / airline / max price (client-side only) ---
+var selAir = new Set();
+var sortKey = "sar";
+function applyFilters() {
+  var pmax = document.getElementById("pmax");
+  var noLimit = !pmax || +pmax.value >= +pmax.max;
+  var lim = pmax ? +pmax.value : Infinity;
+  document.querySelectorAll(".view .vt").forEach(function (t) {
+    var rows = Array.prototype.slice.call(
+      t.querySelectorAll(".vt-row:not(.vt-head):not(.vt-none)"));
+    var vis = [];
+    rows.forEach(function (r) {
+      r.classList.remove("best", "top");
+      var codes = (r.dataset.air || "").split(" ").filter(Boolean);
+      var okAir = selAir.size === 0 ||
+        codes.some(function (c) { return selAir.has(c); });
+      var okPrice = noLimit || +r.dataset.sar <= lim;
+      r.hidden = !(okAir && okPrice);
+      if (!r.hidden) vis.push(r);
+    });
+    vis.sort(function (a, b) {
+      var ka = sortKey === "dur" ? (+a.dataset.dur || 1e9) : +a.dataset.sar;
+      var kb = sortKey === "dur" ? (+b.dataset.dur || 1e9) : +b.dataset.sar;
+      return ka - kb || (+a.dataset.sar - +b.dataset.sar);
+    });
+    vis.forEach(function (r) { t.appendChild(r); });
+    if (vis.length) vis[0].classList.add("top");
+    var none = t.querySelector(".vt-none");
+    if (none) { none.hidden = vis.length > 0; t.appendChild(none); }
+  });
+}
+document.querySelectorAll(".sortbtn").forEach(function (b) {
+  b.addEventListener("click", function () {
+    sortKey = b.dataset.sort;
+    document.querySelectorAll(".sortbtn").forEach(function (x) {
+      x.classList.toggle("active", x === b);
+    });
+    applyFilters();
+  });
+});
+document.querySelectorAll(".airbtn").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var c = b.dataset.air;
+    if (!c) selAir.clear();
+    else if (selAir.has(c)) selAir.delete(c);
+    else selAir.add(c);
+    document.querySelectorAll(".airbtn").forEach(function (x) {
+      x.classList.toggle("active",
+        x.dataset.air ? selAir.has(x.dataset.air) : selAir.size === 0);
+    });
+    applyFilters();
+  });
+});
+var pmaxEl = document.getElementById("pmax");
+var pmaxLbl = document.getElementById("pmaxlbl");
+function pmaxText() {
+  if (!pmaxEl) return;
+  pmaxLbl.textContent = +pmaxEl.value >= +pmaxEl.max ? "no limit"
+    : "\\u2264 " + (+pmaxEl.value).toLocaleString() + " SAR";
+}
+if (pmaxEl) {
+  pmaxEl.addEventListener("input", function () { pmaxText(); applyFilters(); });
+  pmaxText();
+}
+var freset = document.getElementById("freset");
+if (freset) freset.addEventListener("click", function () {
+  selAir.clear();
+  sortKey = "sar";
+  document.querySelectorAll(".sortbtn").forEach(function (x) {
+    x.classList.toggle("active", x.dataset.sort === "sar");
+  });
+  document.querySelectorAll(".airbtn").forEach(function (x) {
+    x.classList.toggle("active", !x.dataset.air);
+  });
+  if (pmaxEl) { pmaxEl.value = pmaxEl.max; pmaxText(); }
+  applyFilters();
+});
+applyFilters();
 
 document.querySelectorAll(".chart").forEach(function (fig) {
   var cfg = JSON.parse(fig.querySelector("script").textContent);
