@@ -40,7 +40,7 @@ points_of_sale:
   - {code: IN, currency: INR}
   - {code: PK, currency: PKR}
   - {code: LK, currency: LKR}
-  - {code: KZ, currency: KZT}
+  - {code: AR, currency: ARS}   # Ignav rejects KZ; Argentina is a classic cheap-POS market
   - {code: US, currency: USD}
   - {code: GB, currency: GBP}
   - {code: DE, currency: EUR}

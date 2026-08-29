@@ -87,7 +87,13 @@ def route_key(watch) -> str:
     if watch["product"] == "car":
         return f'CAR-{watch["pickup_location"]}'
     sl = watch["slices"]
-    return "-".join([sl[0]["origin"]] + [s["destination"] for s in sl])
+    key = "-".join([sl[0]["origin"]] + [s["destination"] for s in sl])
+    if watch.get("airlines"):
+        # An airline-restricted watch has its own winners and losers —
+        # sharing stats with the unrestricted watch on the same route
+        # would double the scan counter and prune markets twice as fast.
+        key += "+" + str(watch["airlines"]).replace(",", "+")
+    return key
 
 
 def variants(watch) -> list[str]:
