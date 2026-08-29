@@ -302,8 +302,9 @@ def _one_window(w, var, rows, all_codes):
         carrier = rows[0].get("carrier") or ""
         stops = rows[0].get("stops")
         stops_txt = "direct" if stops == 0 else f'{stops} stop(s)'
+        via = f' · {_e(rows[0]["via"])}' if rows[0].get("via") else ""
         head = (f'same exact flight everywhere: <span class="mx-itin">'
-                f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt} · '
+                f'{_e(itin)}</span> · {_e(carrier)} · {stops_txt}{via} · '
                 f'quoted in {len(rows)} of {len(all_codes)} markets · '
                 f'{_e(rows[0]["seen_at"][:10])} · trip totals in SAR')
     body = []
