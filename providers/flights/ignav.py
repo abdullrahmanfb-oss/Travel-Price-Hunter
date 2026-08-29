@@ -138,10 +138,11 @@ def search(req: dict) -> list[dict]:
 
     results = _extract(data)
     out = []
-    # 50, not 20: mid-price short/pure-carrier itineraries (~2x the
-    # cheapest interline) were being trimmed. Same billed request —
-    # keeping more of the response is free.
-    for item in results[:req.get("max_results", 50)]:
+    # 250, effectively uncapped: run #71 measured 8-219 offers per
+    # response (median 10), and the one 219-offer response was being
+    # trimmed to 50 — losing pricier-but-shorter pure-carrier options.
+    # Same billed request — keeping the whole response is free.
+    for item in results[:req.get("max_results", 250)]:
         norm = _normalise(item, payload)
         if norm:
             out.append(norm)
