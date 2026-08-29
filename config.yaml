@@ -24,34 +24,41 @@ search:
   max_deep_combos: 6     # at most 6 (provider, market) pairs get the grid
   workers: 3
 
-# 28 markets. POS/currency are passed as API parameters — the supported
-# path. Every currency here must have an FX rate in hunt.py:fx_rates().
+# 32 markets: the owner's chosen set — the 31 generally-cheapest points
+# of sale (ranked) plus the home market. All confirmed supported by
+# ignav.com/docs/markets. POS/currency are passed as API parameters —
+# the supported path. Every currency here must have an FX rate in
+# hunt.py:fx_rates().
 points_of_sale:
   - {code: SA, currency: SAR}   # home market — edge is measured against it
-  - {code: AE, currency: AED}
-  - {code: QA, currency: QAR}
-  - {code: KW, currency: KWD}
-  - {code: BH, currency: BHD}
-  - {code: OM, currency: OMR}
-  - {code: JO, currency: JOD}
   - {code: EG, currency: EGP}
-  - {code: MA, currency: MAD}
-  - {code: TR, currency: TRY}
-  - {code: IN, currency: INR}
+  - {code: AR, currency: ARS}
+  - {code: NG, currency: NGN}
   - {code: PK, currency: PKR}
+  - {code: BD, currency: BDT}
   - {code: LK, currency: LKR}
-  - {code: AR, currency: ARS}   # Ignav rejects KZ; Argentina is a classic cheap-POS market
-  - {code: US, currency: USD}
-  - {code: GB, currency: GBP}
-  - {code: DE, currency: EUR}
-  - {code: PT, currency: EUR}
-  - {code: PL, currency: PLN}
-  - {code: RO, currency: RON}
-  - {code: HU, currency: HUF}
-  - {code: ZA, currency: ZAR}
-  - {code: JP, currency: JPY}
+  - {code: NP, currency: NPR}
+  - {code: IN, currency: INR}
+  - {code: ID, currency: IDR}
+  - {code: VN, currency: VND}
+  - {code: TR, currency: TRY}
+  - {code: UA, currency: UAH}
+  - {code: KE, currency: KES}
+  - {code: TZ, currency: TZS}
+  - {code: UG, currency: UGX}
+  - {code: GH, currency: GHS}
+  - {code: TN, currency: TND}
+  - {code: MA, currency: MAD}
+  - {code: PH, currency: PHP}
+  - {code: KH, currency: KHR}
   - {code: KR, currency: KRW}
-  - {code: SG, currency: SGD}
+  - {code: BO, currency: BOB}
+  - {code: PY, currency: PYG}
+  - {code: CO, currency: COP}
+  - {code: PE, currency: PEN}
+  - {code: BR, currency: BRL}
   - {code: MY, currency: MYR}
   - {code: TH, currency: THB}
-  - {code: ID, currency: IDR}
+  - {code: MX, currency: MXN}
+  - {code: ZA, currency: ZAR}
+  - {code: RU, currency: RUB}   # cheap on paper; booking from KSA can be impractical
