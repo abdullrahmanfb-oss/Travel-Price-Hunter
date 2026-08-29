@@ -70,7 +70,9 @@ jobs:
           python hunt.py remove riyadh-lisbon-saudia || true
           python hunt.py flight riyadh-lisbon \
             --slice RUH:LIS:2026-10-08 --slice LIS:RUH:2026-10-16 \
-            --flex 2 --target-eco 2100 --max-stops 1 --focus SV
+            --flex 2 --target-eco 2100 --max-stops 1 \
+            --focus SV --focus EY --focus QR --focus EK \
+            --focus LH --focus KL
 
           echo "::group::Active providers"
           python hunt.py providers
