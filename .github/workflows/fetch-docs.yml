@@ -35,4 +35,9 @@ jobs:
           for line in text.splitlines():
               if line.strip():
                   print(line.strip()[:300])
+          # anchors lose their targets in the tag-strip; list them whole
+          print("\n--- LINKS ---")
+          for h in re.findall(r'href="([^"]+)"', raw):
+              if h.startswith("http"):
+                  print("HREF:", html.unescape(h))
           EOF
