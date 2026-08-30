@@ -544,37 +544,44 @@ def _row_codes(flight):
     return out
 
 
-def _view_data(cards):
-    """Pull the four view row-sets (cheapest-any / gulf-any per cabin)
-    from the latest scan's matrix windows, plus the watch's route
-    (origin, destination) for fallback search links. Rows arrive
-    cheapest-first."""
-    views, route = {}, (None, None)
+# Gulf carriers for the GULF group chip — same set as core.search.GULF.
+GULF = {"SV", "XY", "F3", "EK", "FZ", "EY", "G9", "QR", "GF", "J9",
+        "KU", "WY"}
+
+POOL_CAP = 150   # deduped tickets rendered per route per cabin
+
+
+def _route_pools(cards):
+    """One deduped ticket pool per flight watch per cabin: every window
+    the last scan recorded (cheapest-any, gulf-any, fastest-any,
+    pure-<carrier>, same-flight focus windows) merged, deduped by
+    (market, flights, dates) keeping the cheapest, sorted by price.
+    The single filter bar then slices this pool client-side."""
+    routes = []
     for c in cards:
         if c["watch"]["product"] != "flight":
             continue
         slices = c["watch"].get("slices") or []
-        if slices:
-            route = (slices[0].get("origin"), slices[0].get("destination"))
+        route = (slices[0].get("origin"), slices[0].get("destination")) \
+            if slices else (None, None)
+        label = f"{route[0]} ⇄ {route[1]}" if route[0] else c["watch"]["id"]
+        pools = {}
         for var, row_lists in c.get("matrix", {}).items():
+            pool = {}
             for rows in row_lists:
-                key = rows[0]["itin_key"]
-                if key == "cheapest-any":
-                    views.setdefault(var, rows)
-                elif key == "gulf-any":
-                    views.setdefault(f"gulf-{var}", rows)
-                elif key == "fastest-any":
-                    views.setdefault(f"fast-{var}", rows)
-                elif key.startswith("pure-"):
-                    # one window per carrier — concat them all so the
-                    # One-airline view holds every (market, airline)
-                    # pair and the airline chips slice it
-                    views.setdefault(f"pure-{var}", []).extend(rows)
-        break                      # one flight watch drives the overview
-    for k in list(views):
-        if k.startswith("pure-"):
-            views[k] = sorted(views[k], key=lambda r: r["amount_sar"])
-    return views, route
+                for r in rows:
+                    key = (r["pos_code"], r.get("flight"), r.get("dates"))
+                    cur = pool.get(key)
+                    if cur is None or r["amount_sar"] < cur["amount_sar"]:
+                        pool[key] = r
+            merged = sorted(pool.values(), key=lambda r: r["amount_sar"])
+            for r in merged:
+                r["_cabin"] = var
+            pools[var] = merged[:POOL_CAP]
+        if pools:
+            routes.append({"wid": c["watch"]["id"], "label": label,
+                           "route": route, "pools": pools})
+    return routes
 
 
 def _gsearch_link(pos, dates, route):
@@ -593,9 +600,11 @@ def _gsearch_link(pos, dates, route):
             f"&hl=en&gl={(pos or 'sa').lower()}")
 
 
-def _kpi(view_id, label, row, cabin="", route=None):
+def _kpi(preset, label, row, cabin="", route=None, wid=""):
     if not row:
-        return (f'<a class="kpi" href="#{view_id}"><span class="k-lbl">'
+        return (f'<a class="kpi" data-preset="{preset}" '
+                f'data-cabin="{_e(cabin or "economy")}" '
+                f'href="#tickets-{_e(wid)}"><span class="k-lbl">'
                 f'{_e(label)}</span><span class="k-num">—</span>'
                 f'<span class="k-sub">awaiting scan data</span></a>')
     cabin_chip = f'<span class="badge b-muted">{_e(cabin)}</span>' if cabin \
@@ -609,7 +618,8 @@ def _kpi(view_id, label, row, cabin="", route=None):
         if gs:
             book = (f'<span class="k-book" data-href="{_e(gs)}">'
                     f'Search ↗</span>')
-    return f'''<a class="kpi" href="#{view_id}">
+    return f'''<a class="kpi" data-preset="{preset}" \
+data-cabin="{_e(cabin or "economy")}" href="#tickets-{_e(wid)}">
   <span class="k-lbl">{_e(label)} {cabin_chip}</span>
   <span class="k-num">{row["amount_sar"]:,.0f} <small>SAR</small></span>
   <span class="k-sub">{_e(countries.label(row["pos_code"]))} ·
@@ -622,25 +632,23 @@ def _kpi(view_id, label, row, cabin="", route=None):
 </a>'''
 
 
-def _kpi_section(views, route=None):
-    eco = (views.get("economy") or [None])[0]
-    biz = (views.get("business") or [None])[0]
-    ge = (views.get("gulf-economy") or [None])[0]
-    gb = (views.get("gulf-business") or [None])[0]
+def _kpi_section(pools, route=None, wid=""):
+    """Three headline cards; tapping one PRESETS the filter bar
+    (cabin / Gulf chip) rather than switching views."""
+    eco = (pools.get("economy") or [None])[0]
+    biz = (pools.get("business") or [None])[0]
     gulf, gulf_cabin = None, ""
-    for cand, cab in ((ge, "economy"), (gb, "business")):
-        if cand and (gulf is None or cand["amount_sar"] < gulf["amount_sar"]):
-            gulf, gulf_cabin = cand, cab
+    for cab in ("economy", "business"):
+        for r in pools.get(cab) or []:
+            if set(_row_codes(r.get("flight"))) & GULF:
+                if gulf is None or r["amount_sar"] < gulf["amount_sar"]:
+                    gulf, gulf_cabin = r, cab
+                break
     return f'''<section class="kpis">
-{_kpi("view-a", "Cheapest economy", eco, route=route)}
-{_kpi("view-b", "Cheapest Gulf airlines", gulf, gulf_cabin, route=route)}
-{_kpi("view-c", "Cheapest business", biz, route=route)}
-</section>
-<p class="note">Trip totals in SAR, 1 adult, Riyadh ⇄ Lisbon. Tap a card
-for the full per-country view. Travel times are shown per direction
-(going and return separately), layovers included. Booking links
-regenerate each scan — open them in a private/incognito window for the
-quoted price.</p>'''
+{_kpi("eco", "Cheapest economy", eco, "economy", route, wid)}
+{_kpi("gulf", "Cheapest Gulf airlines", gulf, gulf_cabin, route, wid)}
+{_kpi("biz", "Cheapest business", biz, "business", route, wid)}
+</section>'''
 
 
 def _view_table(rows, route=None):
@@ -659,9 +667,8 @@ def _view_table(rows, route=None):
             book = (f'<a class="booklink alt" href="{_e(gs)}" '
                     f'target="_blank" rel="noopener">Search ↗</a>'
                     if gs else '<span class="vt-dim">—</span>')
-        chips = '<span class="badge b-good">cheapest</span>' if i == 0 else \
-            ('<span class="badge b-muted">home</span>'
-             if r["pos_code"] == "SA" else "")
+        chips = ('<span class="badge b-muted">home</span>'
+                 if r["pos_code"] == "SA" else "")
         if r.get("flight_out"):
             legs = _leg_box("Going", "→", r.get("dur_out"),
                             r.get("flight_out"), r.get("via_out"))
@@ -677,9 +684,10 @@ def _view_table(rows, route=None):
                                     f'<small>{_e(r["via"])}</small>')
         dmax = _row_dir_max(r)
         out.append(
-            f'<div class="vt-row tk{" best" if i == 0 else ""}" '
+            f'<div class="vt-row tk" '
             f'data-sar="{r["amount_sar"]:.0f}" '
             f'data-dur="{dmax if dmax else ""}" '
+            f'data-cabin="{_e(r.get("_cabin") or "economy")}" '
             f'data-air="{_e(" ".join(_row_codes(r.get("flight"))))}">'
             f'<div class="tk-head">'
             f'<span class="vt-mkt">{_e(countries.label(r["pos_code"]))} '
@@ -694,24 +702,25 @@ def _view_table(rows, route=None):
             f'<div class="tk-legs">{legs}</div>'
             f'</div>')
     out.append('<div class="vt-row vt-none" hidden>No tickets match '
-               'these filters in THIS view — airline-specific tickets '
-               'live in view D · One airline; or loosen the filters.'
-               '</div>')
+               'these filters — loosen the airline, price or '
+               'travel-time filter.</div>')
     out.append('</div>')
     return "".join(out)
 
 
-def _filter_bar(views):
-    """Sort / airline / max-price controls over the view tables. Pure
-    client-side — filters what the last scan already found, no extra
-    API calls."""
+def _filter_bar(routes):
+    """THE one control surface: cabin, sort, airline (with a Gulf group
+    chip and the one-airline toggle), price and per-direction time
+    limits. Pure client-side over the merged ticket pools — no extra
+    API calls, applies to whichever route tab is open."""
     codes, prices, durs = set(), [], []
-    for rows in views.values():
-        for r in rows or []:
-            codes.update(_row_codes(r.get("flight")))
-            prices.append(r["amount_sar"])
-            if _row_dir_max(r):
-                durs.append(_row_dir_max(r))
+    for rt in routes:
+        for rows in rt["pools"].values():
+            for r in rows or []:
+                codes.update(_row_codes(r.get("flight")))
+                prices.append(r["amount_sar"])
+                if _row_dir_max(r):
+                    durs.append(_row_dir_max(r))
     if not prices:
         return ""
     lo = int(min(prices) // 100 * 100)
@@ -728,12 +737,18 @@ def _filter_bar(views):
         for c in sorted(codes, key=lambda c: AIRLINE_NAMES.get(c, c)))
     return f'''<div class="filterbar">
   <div class="fbar-title">Filter &amp; sort tickets</div>
+  <div class="fgroup"><span class="flbl">Cabin</span>
+    <button class="fbtn cabbtn active" data-cabin="economy">Economy</button>
+    <button class="fbtn cabbtn" data-cabin="business">Business</button>
+  </div>
   <div class="fgroup"><span class="flbl">Sort</span>
     <button class="fbtn sortbtn active" data-sort="sar">Cheapest</button>
     <button class="fbtn sortbtn" data-sort="dur">Shortest trip</button>
   </div>
   <div class="fgroup"><span class="flbl">Airline</span>
     <button class="fbtn airbtn active" data-air="">All</button>
+    <button class="fbtn" id="fgulf"
+            data-codes="{_e(" ".join(sorted(GULF)))}">Gulf airlines</button>
     {chips}
     <button class="fbtn" id="fpure">One airline only</button>
   </div>
@@ -751,58 +766,46 @@ def _filter_bar(views):
 </div>'''
 
 
-def _views_section(views, route=None):
-    a = _view_table(views.get("economy"), route)
-    b = (f'<h3 class="vt-sub">Economy</h3>'
-         f'{_view_table(views.get("gulf-economy"), route)}'
-         f'<h3 class="vt-sub">Business</h3>'
-         f'{_view_table(views.get("gulf-business"), route)}')
-    c = _view_table(views.get("business"), route)
-    dd = (f'<h3 class="vt-sub">Economy</h3>'
-          f'{_view_table(views.get("pure-economy"), route)}'
-          f'<h3 class="vt-sub">Business</h3>'
-          f'{_view_table(views.get("pure-business"), route)}')
-    ee = (f'<h3 class="vt-sub">Economy</h3>'
-          f'{_view_table(views.get("fast-economy"), route)}'
-          f'<h3 class="vt-sub">Business</h3>'
-          f'{_view_table(views.get("fast-business"), route)}')
+def _routes_section(routes):
+    """One filter bar; route tabs (when tracking several routes); per
+    route a pane with its 3 headline cards and ONE merged ticket list
+    that the filter bar slices."""
+    if not routes:
+        return ""
+    tabs = ""
+    if len(routes) > 1:
+        tabs = ('<nav class="viewbar" role="tablist">' + "".join(
+            f'<button class="vbtn rbtn{" active" if i == 0 else ""}" '
+            f'data-route="pane-{_e(rt["wid"])}">{_e(rt["label"])}</button>'
+            for i, rt in enumerate(routes)) + '</nav>')
+    panes = []
+    for i, rt in enumerate(routes):
+        merged = sorted(
+            (rt["pools"].get("economy") or []) +
+            (rt["pools"].get("business") or []),
+            key=lambda r: r["amount_sar"])
+        n_pool = len(merged)
+        panes.append(
+            f'<div class="routepane view" id="pane-{_e(rt["wid"])}"'
+            f'{"" if i == 0 else " hidden"}>'
+            f'{_kpi_section(rt["pools"], rt["route"], rt["wid"])}'
+            f'<div id="tickets-{_e(rt["wid"])}">'
+            f'{_view_table(merged, rt["route"])}</div>'
+            f'<p class="note">{n_pool} tickets found for '
+            f'{_e(rt["label"])} in the latest scan — the filter bar '
+            f'above slices them.</p></div>')
     return f'''<section>
-{_filter_bar(views)}
-<nav class="viewbar" role="tablist">
-  <button class="vbtn active" data-view="view-e">E · Shortest trips</button>
-  <button class="vbtn" data-view="view-a">A · Economy, all markets</button>
-  <button class="vbtn" data-view="view-b">B · Gulf airlines</button>
-  <button class="vbtn" data-view="view-c">C · Business, all markets</button>
-  <button class="vbtn" data-view="view-d">D · One airline</button>
-</nav>
-<div id="view-e" class="view">
-  <p class="note">Each country's SHORTEST trip at the cheapest fare
-  that buys it — measured on each direction separately, never added
-  together (options within an hour of the fastest count as equally
-  short; the cheapest of them wins). Sort by "Cheapest" to rank these
-  short tickets by price; airline chips narrow to one carrier.</p>
-  {ee}</div>
-<div id="view-a" class="view" hidden>{a}</div>
-<div id="view-b" class="view" hidden>
-  <p class="note">Cheapest tickets that include a Gulf carrier (Saudia,
-  flynas, flyadeal, Emirates, flydubai, Etihad, Air Arabia, Qatar
-  Airways, Gulf Air, Jazeera, Kuwait Airways, Oman Air) — flight numbers
-  show the exact carriers on each ticket.</p>{b}</div>
-<div id="view-c" class="view" hidden>{c}</div>
-<div id="view-d" class="view" hidden>
-  <p class="note">Every segment on the SAME airline — no airline change
-  at the connection (e.g. Riyadh→Doha→Lisbon all on Qatar Airways).
-  Each country shows that airline's CHEAPEST ticket and (when different)
-  its FASTEST one: tap an airline chip above, then sort by "Cheapest"
-  for the best fare per country or "Shortest trip" for the quickest
-  routing per country.</p>{dd}</div>
-<p class="note"><b>Book ↗</b> = exact ticket link fetched this scan (the
-3 cheapest tickets of each view). <b>Search ↗</b> = every other ticket:
-opens Google Flights priced from that ticket's country with its dates —
-pick the matching flights there. Each ticket box shows GOING and RETURN
-separately: that direction's own travel time, flights, stop airport and
-wait. The travel-time filter limits each direction, not the two added
-together.</p>
+{_filter_bar(routes)}
+{tabs}
+{"".join(panes)}
+<p class="note"><b>Book ↗</b> = exact ticket link fetched this scan.
+<b>Search ↗</b> = every other ticket: opens Google Flights priced from
+that ticket's country with its dates — pick the matching flights there.
+Each ticket box shows GOING and RETURN separately: that direction's own
+travel time, flights, stop airport and wait. The travel-time filter
+limits each direction, not the two added together. Trip totals in SAR,
+1 adult; booking links regenerate each scan — open them in a
+private/incognito window.</p>
 </section>'''
 
 
@@ -820,7 +823,7 @@ def render(cfg=None) -> str:
          '--slice ORIGIN:DEST:YYYY-MM-DD</code> — then '
          '<code>python hunt.py scan</code>.</p>')
     n_panels = sum(len(c["panels"]) for c in d["cards"])
-    views, route = _view_data(d["cards"])
+    routes = _route_pools(d["cards"])
 
     return f'''<title>Fare Hunter</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -843,9 +846,7 @@ def render(cfg=None) -> str:
 
 {action}
 
-{_kpi_section(views, route)}
-
-{_views_section(views, route)}
+{_routes_section(routes)}
 
 <details class="more"><summary>Price history &amp; watch detail</summary>
 <section><h2>Watches</h2><div class="grid">{cards}</div></section>
@@ -1156,22 +1157,15 @@ details.more[open] > summary { border-bottom: 1px solid var(--hair); }
 
 
 JS = '''
-// view switcher: buttons + KPI-card anchors both select a view
-function showView(id) {
-  document.querySelectorAll(".view").forEach(function (v) {
-    v.hidden = v.id !== id;
-  });
-  document.querySelectorAll(".vbtn").forEach(function (b) {
-    b.classList.toggle("active", b.dataset.view === id);
-  });
-}
-document.querySelectorAll(".vbtn").forEach(function (b) {
-  b.addEventListener("click", function () { showView(b.dataset.view); });
-});
-document.querySelectorAll(".kpi").forEach(function (k) {
-  k.addEventListener("click", function (e) {
-    var id = k.getAttribute("href").slice(1);
-    showView(id);
+// route tabs: one pane per tracked route
+document.querySelectorAll(".rbtn").forEach(function (b) {
+  b.addEventListener("click", function () {
+    document.querySelectorAll(".routepane").forEach(function (p) {
+      p.hidden = p.id !== b.dataset.route;
+    });
+    document.querySelectorAll(".rbtn").forEach(function (x) {
+      x.classList.toggle("active", x === b);
+    });
   });
 });
 document.querySelectorAll(".k-book").forEach(function (s) {
@@ -1181,10 +1175,14 @@ document.querySelectorAll(".k-book").forEach(function (s) {
   });
 });
 
-// --- ticket filters: sort / airline / max price (client-side only) ---
+// --- THE filter bar: cabin / sort / airline / price / time ---
 var selAir = new Set();
 var sortKey = "sar";
 var pureOnly = false;
+var gulfOnly = false;
+var cabin = "economy";
+var fgulf = document.getElementById("fgulf");
+var GULF = new Set(((fgulf && fgulf.dataset.codes) || "").split(" "));
 function applyFilters() {
   var pmax = document.getElementById("pmax");
   var noLimit = !pmax || +pmax.value >= +pmax.max;
@@ -1199,13 +1197,16 @@ function applyFilters() {
     rows.forEach(function (r) {
       r.classList.remove("best", "top");
       var codes = (r.dataset.air || "").split(" ").filter(Boolean);
+      var okCabin = !r.dataset.cabin || r.dataset.cabin === cabin;
       var okAir = selAir.size === 0 ||
         codes.some(function (c) { return selAir.has(c); });
+      var okGulf = !gulfOnly ||
+        codes.some(function (c) { return GULF.has(c); });
       var okPure = !pureOnly || codes.length === 1;
       var okPrice = noLimit || +r.dataset.sar <= lim;
       // unknown durations only pass while no time limit is set
       var okDur = noDur || (r.dataset.dur && +r.dataset.dur <= dlim);
-      r.hidden = !(okAir && okPure && okPrice && okDur);
+      r.hidden = !(okCabin && okAir && okGulf && okPure && okPrice && okDur);
       if (!r.hidden) vis.push(r);
     });
     vis.sort(function (a, b) {
@@ -1247,6 +1248,38 @@ if (fpure) fpure.addEventListener("click", function () {
   fpure.classList.toggle("active", pureOnly);
   applyFilters();
 });
+if (fgulf) fgulf.addEventListener("click", function () {
+  gulfOnly = !gulfOnly;
+  fgulf.classList.toggle("active", gulfOnly);
+  applyFilters();
+});
+function setCabin(c) {
+  cabin = c;
+  document.querySelectorAll(".cabbtn").forEach(function (x) {
+    x.classList.toggle("active", x.dataset.cabin === c);
+  });
+}
+document.querySelectorAll(".cabbtn").forEach(function (b) {
+  b.addEventListener("click", function () {
+    setCabin(b.dataset.cabin);
+    applyFilters();
+  });
+});
+// headline cards preset the controls instead of switching views
+document.querySelectorAll(".kpi").forEach(function (k) {
+  k.addEventListener("click", function () {
+    setCabin(k.dataset.cabin || "economy");
+    selAir.clear();
+    pureOnly = false;
+    if (fpure) fpure.classList.remove("active");
+    gulfOnly = k.dataset.preset === "gulf";
+    if (fgulf) fgulf.classList.toggle("active", gulfOnly);
+    document.querySelectorAll(".airbtn").forEach(function (x) {
+      x.classList.toggle("active", !x.dataset.air);
+    });
+    applyFilters();
+  });
+});
 var pmaxEl = document.getElementById("pmax");
 var pmaxLbl = document.getElementById("pmaxlbl");
 function pmaxText() {
@@ -1275,6 +1308,9 @@ if (freset) freset.addEventListener("click", function () {
   sortKey = "sar";
   pureOnly = false;
   if (fpure) fpure.classList.remove("active");
+  gulfOnly = false;
+  if (fgulf) fgulf.classList.remove("active");
+  setCabin("economy");
   document.querySelectorAll(".sortbtn").forEach(function (x) {
     x.classList.toggle("active", x.dataset.sort === "sar");
   });

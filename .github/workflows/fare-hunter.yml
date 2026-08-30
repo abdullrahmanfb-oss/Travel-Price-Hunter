@@ -82,6 +82,15 @@ jobs:
           # returning 0-1 offers per restricted round-trip search (the
           # general pool already carries the short combos since the
           # max_results=250 change) — 12 requests/scan for nothing.
+          python hunt.py flight riyadh-bali \
+            --slice RUH:DPS:2026-10-09 --slice DPS:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --max-stops 1 \
+            --focus QR --focus EY --focus EK --focus FZ --focus XY
+          python hunt.py flight riyadh-almaty \
+            --slice RUH:ALA:2026-10-09 --slice ALA:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --max-stops 1 \
+            --focus QR --focus EY --focus EK --focus FZ --focus XY \
+            --focus J9
 
           echo "::group::Active providers"
           python hunt.py providers
