@@ -149,7 +149,8 @@ def conn():
     for col in ("flight TEXT", "dates TEXT", "carrier_name TEXT",
                 "duration_min INTEGER", "deep_link TEXT", "via TEXT",
                 "dur_out INTEGER", "dur_in INTEGER", "flight_out TEXT",
-                "flight_in TEXT", "via_out TEXT", "via_in TEXT"):
+                "flight_in TEXT", "via_out TEXT", "via_in TEXT",
+                "time_out TEXT", "time_in TEXT"):
         try:
             c.execute(f"ALTER TABLE flight_matrix ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -308,15 +309,17 @@ def record_matrix(watch_id, variant, itin_key, carrier, rows, at=None):
                    (watch_id,variant,itin_key,carrier,stops,pos_code,
                     currency,amount_native,amount_sar,seen_at,flight,dates,
                     carrier_name,duration_min,deep_link,via,
-                    dur_out,dur_in,flight_out,flight_in,via_out,via_in)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    dur_out,dur_in,flight_out,flight_in,via_out,via_in,
+                    time_out,time_in)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (watch_id, variant, itin_key, carrier, r.get("stops"),
                  r["pos_code"], r["currency"], r["amount_native"],
                  r["amount_sar"], now, r.get("flight"), r.get("dates"),
                  r.get("carrier_name"), r.get("duration_min"),
                  r.get("deep_link"), r.get("via"),
                  r.get("dur_out"), r.get("dur_in"), r.get("flight_out"),
-                 r.get("flight_in"), r.get("via_out"), r.get("via_in")))
+                 r.get("flight_in"), r.get("via_out"), r.get("via_in"),
+                 r.get("time_out"), r.get("time_in")))
 
 
 def latest_matrix(watch_id, variant):

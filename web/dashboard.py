@@ -496,8 +496,16 @@ def _via_parts(via):
     return ", ".join(airports), ", ".join(waits)
 
 
-def _leg_box(label, arrow, dur, flights, via):
+def _leg_box(label, arrow, dur, flights, via, times=""):
     fl = _e((flights or "").replace("+", " + "))
+    # '16:50 → 06:10 +1' -> departure/arrival line, +N marked as days
+    tline = ""
+    if times:
+        t = _e(times)
+        if " +" in t:
+            t, plus = t.rsplit(" +", 1)
+            t += f' <small>+{plus} day{"s" if plus != "1" else ""}</small>'
+        tline = f'<div class="tk-fl">{t}</div>'
     if via == "direct":
         stopline = "direct — no stop"
         waitline = ""
@@ -514,6 +522,7 @@ def _leg_box(label, arrow, dur, flights, via):
             f'<div class="tk-leg-h"><span>{arrow} {label}</span>'
             f'<b>{_fmt_dur(dur)}</b></div>'
             f'<div class="tk-fl">{fl or "—"}</div>'
+            f'{tline}'
             f'<small>{stopline}'
             f'{" · " + waitline if stopline and waitline else waitline}'
             f'</small></div>')
@@ -529,6 +538,18 @@ AIRLINE_NAMES = {
     "MS": "EgyptAir", "RJ": "Royal Jordanian", "LX": "Swiss",
     "OS": "Austrian", "IB": "Iberia", "UX": "Air Europa", "W6": "Wizz",
     "PC": "Pegasus", "SN": "Brussels",
+    # Gulf affiliates + South/Southeast/Central Asia (Bali, Almaty)
+    "3L": "Air Arabia Abu Dhabi", "5J": "Cebu Pacific", "6E": "IndiGo",
+    "IX": "Air India Express", "AI": "Air India",
+    "PR": "Philippine Airlines", "KC": "Air Astana", "DV": "SCAT",
+    "HY": "Uzbekistan Air", "J2": "Azerbaijan Air", "GA": "Garuda",
+    "QZ": "AirAsia Indonesia", "ID": "Batik Air", "JT": "Lion Air",
+    "SQ": "Singapore", "TR": "Scoot", "MH": "Malaysia Air",
+    "AK": "AirAsia", "D7": "AirAsia X", "TG": "Thai",
+    "VN": "Vietnam Air", "VJ": "VietJet", "UL": "SriLankan",
+    "CX": "Cathay", "KE": "Korean Air", "OZ": "Asiana", "BR": "EVA Air",
+    "CI": "China Airlines", "MU": "China Eastern",
+    "CZ": "China Southern", "CA": "Air China", "ET": "Ethiopian",
 }
 
 
@@ -542,6 +563,21 @@ def _row_codes(flight):
         if len(f) >= 3 and f[:2].upper() not in out:
             out.append(f[:2].upper())
     return out
+
+
+def _carrier_en(name, flight):
+    """English display name for a ticket's airline. Ignav returns the
+    carrier name in the MARKET's language (a Saudi quote says
+    'الخطوط الجوية القطرية'), which made rows unrecognisable next to the
+    English filter chips — filtering itself is code-based and never
+    depended on the name. Keep Latin-script names; otherwise map the
+    ticket's first flight code through AIRLINE_NAMES."""
+    if name and all(ord(ch) < 0x370 for ch in name):
+        return name
+    codes = _row_codes(flight)
+    if codes:
+        return AIRLINE_NAMES.get(codes[0], codes[0])
+    return name or ""
 
 
 # Gulf carriers for the GULF group chip — same set as core.search.GULF.
@@ -623,7 +659,7 @@ data-cabin="{_e(cabin or "economy")}" href="#tickets-{_e(wid)}">
   <span class="k-lbl">{_e(label)} {cabin_chip}</span>
   <span class="k-num">{row["amount_sar"]:,.0f} <small>SAR</small></span>
   <span class="k-sub">{_e(countries.label(row["pos_code"]))} ·
-    {_e(row.get("carrier_name") or "")}</span>
+    {_e(_carrier_en(row.get("carrier_name"), row.get("flight")))}</span>
   <span class="k-sub">{_fmt_dates(row.get("dates"))} ·
     {_fmt_dirs(row)}{" · " + _e(_stops_txt(row))
                      if _stops_txt(row) else ""}{book}</span>
@@ -671,10 +707,12 @@ def _view_table(rows, route=None):
                  if r["pos_code"] == "SA" else "")
         if r.get("flight_out"):
             legs = _leg_box("Going", "→", r.get("dur_out"),
-                            r.get("flight_out"), r.get("via_out"))
+                            r.get("flight_out"), r.get("via_out"),
+                            r.get("time_out"))
             if r.get("flight_in"):
                 legs += _leg_box("Return", "←", r.get("dur_in"),
-                                 r.get("flight_in"), r.get("via_in"))
+                                 r.get("flight_in"), r.get("via_in"),
+                                 r.get("time_in"))
         else:
             # legacy row recorded before the per-direction split
             legs = _leg_box("Round trip", "⇄", r.get("duration_min"),
@@ -683,6 +721,7 @@ def _view_table(rows, route=None):
                 legs = legs.replace("<small></small>",
                                     f'<small>{_e(r["via"])}</small>')
         dmax = _row_dir_max(r)
+        airline = _carrier_en(r.get("carrier_name"), r.get("flight"))
         out.append(
             f'<div class="vt-row tk" '
             f'data-sar="{r["amount_sar"]:.0f}" '
@@ -695,7 +734,7 @@ def _view_table(rows, route=None):
             f'<span class="vt-price">{r["amount_sar"]:,.0f} SAR</span>'
             f'</div>'
             f'<div class="tk-sub">'
-            f'<span>{_e(r.get("carrier_name") or "—")} · '
+            f'<span>{_e(airline or "—")} · '
             f'{_fmt_dates(r.get("dates"))}</span>'
             f'<span>{native}{" " if native else ""}{book}</span>'
             f'</div>'

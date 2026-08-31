@@ -436,6 +436,22 @@ def _via_txt(o):
     return " · ".join(_leg_via(s) for s in slices)
 
 
+def _leg_times(segs):
+    """Clock times for one direction: first departure → last arrival in
+    local time, with a +N suffix when the arrival lands N days later
+    ('16:50 → 06:10 +1'). Empty when either stamp is missing."""
+    if not segs:
+        return ""
+    try:
+        d = datetime.fromisoformat(segs[0].get("depart") or "")
+        a = datetime.fromisoformat(segs[-1].get("arrive") or "")
+    except (TypeError, ValueError):
+        return ""
+    plus = (a.date() - d.date()).days
+    return (f"{d:%H:%M} → {a:%H:%M}"
+            + (f" +{plus}" if plus > 0 else ""))
+
+
 def _dir_max(o):
     """The LONGEST direction's travel time — how a person measures a
     trip ('a 10-hour flight'), never the two directions summed. Falls
@@ -468,6 +484,8 @@ def _matrix_row(pc, o):
             "via_in": _leg_via(slices[1]) if len(slices) > 1 else "",
             "flight_out": _slice_flights(o, 0),
             "flight_in": _slice_flights(o, 1),
+            "time_out": _leg_times(slices[0]) if slices else "",
+            "time_in": _leg_times(slices[1]) if len(slices) > 1 else "",
             "flight": "+".join(s.get("flight", "?")
                                for s in o.get("segments", []))[:48],
             "dates": "/".join(o.get("dates") or [])}
