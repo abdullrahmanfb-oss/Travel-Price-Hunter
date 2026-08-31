@@ -30,7 +30,7 @@ MAX_DEEP_COMBOS = 6
 # segments — pure single-Gulf-carrier itineraries don't exist on many
 # routes (they interline), so "contains" is the workable definition.
 GULF = {"SV", "XY", "F3", "EK", "FZ", "EY", "G9", "QR", "GF", "J9",
-        "KU", "WY"}
+        "KU", "WY", "OV", "3L"}   # incl. SalamAir, Air Arabia Abu Dhabi
 WORKERS = 3            # free/test provider tiers punish parallelism
 PER_MINUTE = 30        # conservative default; raise via config once proven
 

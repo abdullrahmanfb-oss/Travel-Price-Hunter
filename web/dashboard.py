@@ -539,7 +539,8 @@ AIRLINE_NAMES = {
     "OS": "Austrian", "IB": "Iberia", "UX": "Air Europa", "W6": "Wizz",
     "PC": "Pegasus", "SN": "Brussels",
     # Gulf affiliates + South/Southeast/Central Asia (Bali, Almaty)
-    "3L": "Air Arabia Abu Dhabi", "5J": "Cebu Pacific", "6E": "IndiGo",
+    "3L": "Air Arabia Abu Dhabi", "OV": "SalamAir",
+    "5J": "Cebu Pacific", "6E": "IndiGo",
     "IX": "Air India Express", "AI": "Air India",
     "PR": "Philippine Airlines", "KC": "Air Astana", "DV": "SCAT",
     "HY": "Uzbekistan Air", "J2": "Azerbaijan Air", "GA": "Garuda",
@@ -582,7 +583,7 @@ def _carrier_en(name, flight):
 
 # Gulf carriers for the GULF group chip — same set as core.search.GULF.
 GULF = {"SV", "XY", "F3", "EK", "FZ", "EY", "G9", "QR", "GF", "J9",
-        "KU", "WY"}
+        "KU", "WY", "OV", "3L"}
 
 POOL_CAP = 150   # deduped tickets rendered per route per cabin
 
