@@ -551,6 +551,7 @@ AIRLINE_NAMES = {
     "CX": "Cathay", "KE": "Korean Air", "OZ": "Asiana", "BR": "EVA Air",
     "CI": "China Airlines", "MU": "China Eastern",
     "CZ": "China Southern", "CA": "Air China", "ET": "Ethiopian",
+    "VF": "AJet", "SU": "Aeroflot",
 }
 
 
