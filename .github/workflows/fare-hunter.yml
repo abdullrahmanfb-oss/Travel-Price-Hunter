@@ -103,6 +103,12 @@ jobs:
             --flex 1 --length-flex 1 --max-stops 1 \
             --focus QR --focus EY --focus EK --focus TK --focus BA \
             --focus KL --focus LH
+          # PVG = Shanghai Pudong, where all international arrivals land.
+          python hunt.py flight riyadh-shanghai \
+            --slice RUH:PVG:2026-10-09 --slice PVG:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --max-stops 1 \
+            --focus QR --focus EY --focus EK --focus SV \
+            --focus MU --focus CZ --focus CA
 
           echo "::group::Active providers"
           python hunt.py providers
