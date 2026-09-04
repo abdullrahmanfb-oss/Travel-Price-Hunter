@@ -91,6 +91,18 @@ jobs:
             --flex 1 --length-flex 1 --max-stops 1 \
             --focus QR --focus EY --focus EK --focus FZ --focus XY \
             --focus J9
+          # MOW = all Moscow airports (SVO/DME/VKO); flynas + flydubai
+          # fly the route, so they join the usual Gulf focus carriers.
+          python hunt.py flight riyadh-moscow \
+            --slice RUH:MOW:2026-10-09 --slice MOW:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --max-stops 1 \
+            --focus XY --focus FZ --focus EK --focus QR --focus EY \
+            --focus SU
+          python hunt.py flight riyadh-edinburgh \
+            --slice RUH:EDI:2026-10-09 --slice EDI:RUH:2026-10-19 \
+            --flex 1 --length-flex 1 --max-stops 1 \
+            --focus QR --focus EY --focus EK --focus TK --focus BA \
+            --focus KL --focus LH
 
           echo "::group::Active providers"
           python hunt.py providers
