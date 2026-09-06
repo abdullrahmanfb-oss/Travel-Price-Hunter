@@ -123,6 +123,8 @@ def _reason(exc):
     """Short, groupable label for an exception — HTTP status when we have
     one, else the exception class. A 400's body usually names the bad
     field or value; surface it so the summary is actionable."""
+    if getattr(exc, "label", None):
+        return exc.label              # e.g. ignav.QuotaExhausted
     resp = getattr(exc, "response", None)
     if resp is not None and getattr(resp, "status_code", None):
         code = resp.status_code
@@ -141,6 +143,12 @@ def _reason(exc):
 
 
 def _one(watch, provider, pos, variant, slice_set, route):
+    # A provider that has reported its quota exhausted gets no more
+    # calls this scan — and no rate-limiter wait, which is what turned
+    # a dead key into a 28-minute run.
+    if getattr(provider, "exhausted", None) and provider.exhausted():
+        ERRORS[f"{provider.NAME}: skipped, key exhausted"] += 1
+        return []
     LIMITER.wait()
     try:
         res = provider.search(_build_req(watch, pos, variant, slice_set))

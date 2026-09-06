@@ -67,6 +67,28 @@ def available() -> bool:
     return bool(os.environ.get("IGNAV_TOKEN"))
 
 
+class QuotaExhausted(RuntimeError):
+    """The key's request allowance is used up (HTTP 402). Every further
+    call would fail the same way, so after the first one the provider
+    stops calling out for the rest of the process — run #90 otherwise
+    spent 28 minutes making 840 doomed, rate-limited calls."""
+    label = "API KEY EXHAUSTED (HTTP 402) - rotate IGNAV_TOKEN"
+
+
+_EXHAUSTED = False
+
+
+def exhausted() -> bool:
+    return _EXHAUSTED
+
+
+def _check_quota(r):
+    global _EXHAUSTED
+    if r.status_code == 402:
+        _EXHAUSTED = True
+        raise QuotaExhausted(QuotaExhausted.label)
+
+
 def _headers():
     return {"X-Api-Key": os.environ["IGNAV_TOKEN"],
             "Content-Type": "application/json",
@@ -306,8 +328,11 @@ def booking_link(offer_id):
     produced the id."""
     if not offer_id:
         return None
+    if _EXHAUSTED:
+        raise QuotaExhausted(QuotaExhausted.label)
     r = requests.post(f"{BASE}/fares/booking-links", headers=_headers(),
                       json={"ignav_id": offer_id}, timeout=30)
+    _check_quota(r)
     r.raise_for_status()
     data = r.json()
     opts = data.get("booking_options") or []
@@ -322,9 +347,12 @@ def booking_link(offer_id):
 def _post_with_retry(url, payload, attempts=3):
     """Ignav documents no rate limits, but retry a 429/5xx anyway so one
     blip doesn't cost a whole market's quote."""
+    if _EXHAUSTED:
+        raise QuotaExhausted(QuotaExhausted.label)
     delay = 2.0
     for attempt in range(attempts):
         r = requests.post(url, headers=_headers(), json=payload, timeout=60)
+        _check_quota(r)
         if r.status_code < 500 and r.status_code != 429:
             r.raise_for_status()
             return r
