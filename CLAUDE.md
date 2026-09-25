@@ -83,3 +83,6 @@ Use it to verify any change to compare.py or digest.py.
   zero additional requests.
 - Phase 1 falls back through at most 3 date variants (nearest first)
   when the probe date is empty; phase 2 skips dates proven empty.
+- `providers/hotels/stayapi.py` (Google Hotels) answers ONLY the SA
+  market: it has no point-of-sale parameter and ~50 free calls. Don't
+  make it fan out across markets.

@@ -11,6 +11,7 @@ Multi-provider, 28 markets, one daily digest. **No card stored or charged.**
     export IGNAV_TOKEN=...               # ignav.com, 1000 free requests
     export AMADEUS_KEY=... AMADEUS_SECRET=...   # free self-service tier
     export KIWI_API_KEY=...              # optional
+    export STAYAPI_KEY=...               # stayapi.com Google Hotels, ~50 free calls
     export SMTP_FROM=Abdullrahman.fb@gmail.com
     export SMTP_USER=Abdullrahman.fb@gmail.com
     export SMTP_PASS=...                 # Gmail App Password
@@ -24,6 +25,8 @@ cities and dates:
         --slice DEST:ORIGIN:2026-10-12 --flex 3 --adults 2 \
         --target-eco 2800 --target-biz 9500 --max-stops 1
 
+    # --city: IATA city code (LIS) for Amadeus; StayAPI also accepts a name (Lisbon).
+    # --refundable-only hides StayAPI offers (it doesn't report cancellation terms).
     python hunt.py hotel <id> --city CITYCODE --checkin 2026-09-28 \
         --checkout 2026-10-03 --adults 2 --target 2400 --refundable-only
 
