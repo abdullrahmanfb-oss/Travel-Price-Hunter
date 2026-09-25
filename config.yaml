@@ -15,6 +15,14 @@ alerts:
   # abroad => flagged; 10% => info line only.
   market_edge_pct: 25
 
+hotels:
+  # Markets that get a Booking.com quote through StayAPI (the hotel
+  # source that prices per country). Every market is one billed request
+  # per hotel watch per scan, and the free tier is ~50 requests, so keep
+  # this short: home plus the cheapest points of sale. SA is always
+  # included. Widen it on a paid plan.
+  stayapi_markets: [SA, EG, IN, TR, AR, PK]
+
 search:
   # Tuned for free/test provider tiers, which rate-limit hard. The old
   # 90/min with 6 workers produced ~90% HTTP failures. Raise slowly and

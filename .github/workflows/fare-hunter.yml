@@ -99,8 +99,9 @@ jobs:
           # Amadeus app to production; otherwise the free test host is used.
           AMADEUS_HOSTNAME: ${{ secrets.AMADEUS_HOSTNAME }}
           KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
-          # StayAPI (Google Hotels). ~50 free calls; one call per hotel
-          # watch per run, home market only.
+          # StayAPI: Google Hotels (home market, 1 call) + Booking.com
+          # per market (config.yaml hotels.stayapi_markets, ~7 calls) per
+          # hotel watch per run. ~50 free calls on the free tier.
           STAYAPI_KEY: ${{ secrets.STAYAPI_KEY }}
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
