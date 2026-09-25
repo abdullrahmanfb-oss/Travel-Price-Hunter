@@ -10,6 +10,10 @@ on:
         description: "Quote ALL configured markets this run (ignores pruning; ~120 requests)"
         type: boolean
         default: false
+      archive_previous:
+        description: "One-off: save the previous (v3) database as a 90-day artifact"
+        type: boolean
+        default: false
   schedule:
     - cron: '19 9 * * *'      # daily 09:19 UTC ≈ 12:19 PM Riyadh — keeps the
                               # scan inside Ignav's free 1,000 requests/month
@@ -34,15 +38,48 @@ jobs:
 
       # Carry price history between runs so drops, 30-day charts and
       # baselines build up over time instead of resetting each run.
+      #
+      # One-off archive (manual "archive_previous" input): pull the v3
+      # database (Oct 9-19 trips: Lisbon/Bali/Almaty/Moscow/Edinburgh/
+      # Shanghai) out of the cache and keep it as a downloadable run
+      # artifact for 90 days. It never feeds the dashboard again.
+      - name: Fetch previous history for archiving
+        if: inputs.archive_previous == true
+        uses: actions/cache/restore@v4
+        with:
+          path: hunter.db
+          key: fare-hunter-db-v3-archive-${{ github.run_id }}
+          restore-keys: |
+            fare-hunter-db-v3-
+      - name: Archive previous history
+        if: inputs.archive_previous == true
+        run: |
+          mkdir -p archive
+          if [ -f hunter.db ]; then
+            mv hunter.db archive/hunter-oct-2026-trips.db
+            echo "archived $(du -h archive/hunter-oct-2026-trips.db | cut -f1)"
+          else
+            echo "no previous database found in the cache"
+          fi
+      - name: Upload archive
+        if: inputs.archive_previous == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: fare-hunter-archive-oct-2026-trips
+          path: archive/
+          retention-days: 90
+          if-no-files-found: warn
+
       - name: Restore price history
         uses: actions/cache@v4
         with:
           path: hunter.db
-          # v3: results reset when the trip moved to Oct 9-19 — old
-          # Oct 8-16 history would pollute baselines and the gap view.
-          key: fare-hunter-db-v3-${{ github.run_id }}
+          # v4: fresh start for the Nov 3-14 Lisbon/Porto search. The
+          # v3 history (Oct 9-19, six routes) lives in the archive
+          # artifact above, not on the dashboard.
+          key: fare-hunter-db-v4-${{ github.run_id }}
           restore-keys: |
-            fare-hunter-db-v3-
+            fare-hunter-db-v4-
 
       # The calibration probe (scripts/probe_ignav.py) is deliberately NOT
       # run here any more: the API is calibrated and each probe run costs
@@ -64,51 +101,22 @@ jobs:
           KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
-          # --focus SV: Saudia's best itinerary gets its own market
-          # windows from the same scan (no extra requests). The strict
-          # SV-only watch is gone: no pure-Saudia RUH-LIS itinerary
-          # exists (Saudia doesn't serve LIS; its options interline), so
-          # the airlines_include filter could never match anything.
-          python hunt.py remove riyadh-lisbon-saudia || true
-          # Oct 9 -> 19, one day of give on both ends: --flex 1 shifts
-          # the whole trip (dep 8/9/10), --length-flex 1 lets the stay
-          # run 9/10/11 nights (return 18/19/20). 9 date pairs total.
+          # Nov 3 -> 14, exact dates (no flex), max 1 stop, all markets.
+          # Focus carriers get their own same-flight market windows from
+          # the same scan at zero extra requests. The Oct 9-19 watches
+          # (Lisbon/Bali/Almaty/Moscow/Edinburgh/Shanghai) were retired
+          # with the v4 database; their history is in the archive
+          # artifact, not on the dashboard.
           python hunt.py flight riyadh-lisbon \
-            --slice RUH:LIS:2026-10-09 --slice LIS:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --target-eco 2100 --max-stops 1 \
+            --slice RUH:LIS:2026-11-03 --slice LIS:RUH:2026-11-14 \
+            --target-eco 2100 --max-stops 1 \
             --focus SV --focus EY --focus QR --focus EK \
-            --focus LH --focus KL --focus TK
-          # --probe removed: run #74 measured Ignav's airlines_include
-          # returning 0-1 offers per restricted round-trip search (the
-          # general pool already carries the short combos since the
-          # max_results=250 change) — 12 requests/scan for nothing.
-          python hunt.py flight riyadh-bali \
-            --slice RUH:DPS:2026-10-09 --slice DPS:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --max-stops 1 \
-            --focus QR --focus EY --focus EK --focus FZ --focus XY
-          python hunt.py flight riyadh-almaty \
-            --slice RUH:ALA:2026-10-09 --slice ALA:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --max-stops 1 \
-            --focus QR --focus EY --focus EK --focus FZ --focus XY \
-            --focus J9
-          # MOW = all Moscow airports (SVO/DME/VKO); flynas + flydubai
-          # fly the route, so they join the usual Gulf focus carriers.
-          python hunt.py flight riyadh-moscow \
-            --slice RUH:MOW:2026-10-09 --slice MOW:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --max-stops 1 \
-            --focus XY --focus FZ --focus EK --focus QR --focus EY \
-            --focus SU
-          python hunt.py flight riyadh-edinburgh \
-            --slice RUH:EDI:2026-10-09 --slice EDI:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --max-stops 1 \
-            --focus QR --focus EY --focus EK --focus TK --focus BA \
-            --focus KL --focus LH
-          # PVG = Shanghai Pudong, where all international arrivals land.
-          python hunt.py flight riyadh-shanghai \
-            --slice RUH:PVG:2026-10-09 --slice PVG:RUH:2026-10-19 \
-            --flex 1 --length-flex 1 --max-stops 1 \
-            --focus QR --focus EY --focus EK --focus SV \
-            --focus MU --focus CZ --focus CA
+            --focus LH --focus KL --focus TK --focus TP
+          python hunt.py flight riyadh-porto \
+            --slice RUH:OPO:2026-11-03 --slice OPO:RUH:2026-11-14 \
+            --target-eco 2100 --max-stops 1 \
+            --focus SV --focus EY --focus QR --focus EK \
+            --focus LH --focus KL --focus TK --focus TP
 
           echo "::group::Active providers"
           python hunt.py providers
