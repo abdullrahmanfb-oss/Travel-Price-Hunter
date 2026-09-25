@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS watches (
     rooms         INTEGER DEFAULT 1,
     min_stars     REAL,
     refundable_only INTEGER DEFAULT 0,
+    hotel         TEXT,                -- one property, e.g. 'Ibis Styles Lisboa Aeroporto'
+    room          TEXT,                -- one room type within it, e.g. 'Luxury Suite'
+    hotel_id      TEXT,                -- Booking.com numeric id, resolved once
     -- car
     pickup_location TEXT,
     pickup_at     TEXT,
@@ -138,7 +141,10 @@ def conn():
     # CREATE IF NOT EXISTS never alters an existing table, so columns added
     # after a DB was first created need an explicit migration.
     for col in ("airlines TEXT", "focus_airlines TEXT",
-                "length_flex INTEGER", "probe_airlines TEXT"):
+                "length_flex INTEGER", "probe_airlines TEXT",
+                # hotel-specific watch: one property (and optionally one
+                # room type) instead of "cheapest in the city"
+                "hotel TEXT", "room TEXT", "hotel_id TEXT"):
         try:
             c.execute(f"ALTER TABLE watches ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -185,6 +191,14 @@ def list_watches(active_only=True, product=None):
 def set_status(watch_id, status):
     with conn() as c:
         c.execute("UPDATE watches SET status=? WHERE id=?", (status, watch_id))
+
+
+def set_hotel_id(watch_id, hotel_id):
+    """Remember a resolved Booking.com id so the slow, billed name lookup
+    happens once per watch, not once per scan."""
+    with conn() as c:
+        c.execute("UPDATE watches SET hotel_id=? WHERE id=?",
+                  (str(hotel_id), watch_id))
 
 
 def delete_watch(watch_id):

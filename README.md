@@ -31,6 +31,9 @@ cities and dates:
     # in config.yaml hotels.stayapi_markets (each market = 1 API call per scan).
     python hunt.py hotel <id> --city CITYCODE --checkin 2026-09-28 \
         --checkout 2026-10-03 --adults 2 --target 2400 --refundable-only
+    # ONE property (and optionally one room type), priced from every market:
+    python hunt.py hotel <id> --city LIS --checkin 2026-11-04 --checkout 2026-11-09 \
+        --hotel "Ibis Styles Lisboa Aeroporto" --room "Luxury Suite"
 
     python hunt.py car <id> --pickup LOCATION \
         --from-time 2026-09-29T10:00 --to-time 2026-10-06T10:00 --target 900

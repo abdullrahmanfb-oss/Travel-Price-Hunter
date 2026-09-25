@@ -13,6 +13,7 @@ cities and dates:
 
   python hunt.py hotel <id> --city CITYCODE --checkin YYYY-MM-DD \
       --checkout YYYY-MM-DD [--adults N] [--target SAR] [--refundable-only]
+      [--hotel "Name"] [--room "Room type"]   # one property / room only
 
   python hunt.py car <id> --pickup LOCATION \
       --from-time YYYY-MM-DDTHH:MM --to-time YYYY-MM-DDTHH:MM [--target SAR]
@@ -142,10 +143,14 @@ def cmd_hotel(a):
                   "rooms": a.rooms, "adults": a.adults,
                   "min_stars": a.min_stars,
                   "refundable_only": int(bool(a.refundable_only)),
+                  "hotel": (a.hotel or "").strip() or None,
+                  "room": (a.room or "").strip() or None,
+                  "hotel_id": (a.hotel_id or "").strip() or None,
                   "date_model": "fixed", "target": a.target,
                   "status": "active", "created_at": clock.iso()})
-    print(f'added {a.id}  hotel {a.city.upper()} '
-          f'{a.checkin}->{a.checkout}')
+    what = f'{a.hotel} ({a.room})' if a.hotel and a.room else \
+        a.hotel or f'hotel {a.city.upper()}'
+    print(f'added {a.id}  {what} {a.checkin}->{a.checkout}')
 
 
 def cmd_car(a):
@@ -307,6 +312,15 @@ def main():
     h.add_argument("--min-stars", type=float)
     h.add_argument("--refundable-only", action="store_true")
     h.add_argument("--target", type=float)
+    h.add_argument("--hotel",
+                   help="track ONE property instead of the cheapest in the "
+                        "city, e.g. 'Ibis Styles Lisboa Aeroporto'")
+    h.add_argument("--room",
+                   help="with --hotel: only this room type, e.g. "
+                        "'Luxury Suite' (substring match)")
+    h.add_argument("--hotel-id",
+                   help="Booking.com numeric hotel id; skips the name "
+                        "lookup when you already know it")
     h.set_defaults(func=cmd_hotel)
 
     c = sub.add_parser("car")
