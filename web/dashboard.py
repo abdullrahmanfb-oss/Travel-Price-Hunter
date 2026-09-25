@@ -11,6 +11,7 @@ business keep separate panels, same as everywhere else in the system.
 """
 import html
 import json
+from datetime import date
 from urllib.parse import quote_plus
 
 from core import clock, compare, countries, watches
@@ -197,19 +198,35 @@ def _panel(w, p, chart_id):
         src += (f' · <a class="booklink" href="{_e(det["deep_link"])}" '
                 f'target="_blank" rel="noopener">book via {_e(via)} ↗</a>')
     # what the big number IS: total for the whole trip, party size, dates
-    trip = {"round": "round trip", "oneway": "one-way",
-            "multi": "multi-city"}.get(w.get("trip_type") or "",
-                                       w.get("trip_type") or "trip")
     n = w.get("adults") or 1
-    meta = f'total for the {trip} · {n} adult{"s" if n > 1 else ""}'
-    dates = det.get("dates") or []
-    if dates:
-        meta += " · " + " → ".join(_e(d) for d in dates)
-    stops = det.get("stops")
-    if stops is not None:
-        meta += " · " + ("direct" if stops == 0 else f"{stops} stop(s)")
-    if det.get("via"):
-        meta += f' · {_e(det["via"])}'
+    if w.get("product") == "hotel":
+        nights = _nights(w.get("checkin"), w.get("checkout"))
+        meta = (f'total for {nights} night{"s" if nights != 1 else ""} · '
+                f'{n} adult{"s" if n > 1 else ""} · '
+                f'{_e(w.get("checkin"))} → {_e(w.get("checkout"))}')
+        if det.get("room"):
+            meta += f' · {_e(det["room"])}'
+        if det.get("board"):
+            meta += f' · {_e(det["board"])}'
+        if det.get("free_cancellation"):
+            meta += ' · free cancellation' + (
+                f' until {_e(det["cancel_by"])}' if det.get("cancel_by")
+                else "")
+        elif det.get("free_cancellation") is False:
+            meta += ' · non-refundable'
+    else:
+        trip = {"round": "round trip", "oneway": "one-way",
+                "multi": "multi-city"}.get(w.get("trip_type") or "",
+                                           w.get("trip_type") or "trip")
+        meta = f'total for the {trip} · {n} adult{"s" if n > 1 else ""}'
+        dates = det.get("dates") or []
+        if dates:
+            meta += " · " + " → ".join(_e(d) for d in dates)
+        stops = det.get("stops")
+        if stops is not None:
+            meta += " · " + ("direct" if stops == 0 else f"{stops} stop(s)")
+        if det.get("via"):
+            meta += f' · {_e(det["via"])}'
     metaline = f'<div class="srcline">{meta}</div>'
     home = countries.label("SA")
     gapline = ""
@@ -236,6 +253,14 @@ def _panel(w, p, chart_id):
   {_chart(p["history"], p["target"], chart_id)}
   {_bycountry(p["countries"])}
 </div>'''
+
+
+def _nights(checkin, checkout) -> int:
+    try:
+        return max(1, (date.fromisoformat(checkout)
+                       - date.fromisoformat(checkin)).days)
+    except (TypeError, ValueError):
+        return 1
 
 
 def _bycountry(rows):
@@ -889,7 +914,7 @@ def render(cfg=None) -> str:
 
 {_routes_section(routes)}
 
-<details class="more"><summary>Price history &amp; watch detail</summary>
+<details class="more"{"" if routes else " open"}><summary>Price history &amp; watch detail</summary>
 <section><h2>Watches</h2><div class="grid">{cards}</div></section>
 </details>
 

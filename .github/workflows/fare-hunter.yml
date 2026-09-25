@@ -111,16 +111,23 @@ jobs:
           # (Lisbon/Bali/Almaty/Moscow/Edinburgh/Shanghai) were retired
           # with the v4 database; their history is in the archive
           # artifact, not on the dashboard.
-          python hunt.py flight riyadh-lisbon \
-            --slice RUH:LIS:2026-11-03 --slice LIS:RUH:2026-11-14 \
-            --target-eco 2100 --max-stops 1 \
-            --focus SV --focus EY --focus QR --focus EK \
-            --focus LH --focus KL --focus TK --focus TP
-          python hunt.py flight riyadh-porto \
-            --slice RUH:OPO:2026-11-03 --slice OPO:RUH:2026-11-14 \
-            --target-eco 2100 --max-stops 1 \
-            --focus SV --focus EY --focus QR --focus EK \
-            --focus LH --focus KL --focus TK --focus TP
+          # Flights are PAUSED for now (owner's call: hotels only). The
+          # watches stay in the cached database; `pause` keeps them off
+          # the scan (~10 min, hundreds of Ignav calls) and the digest.
+          # To bring them back: uncomment the two blocks and drop the
+          # two `pause` lines.
+          python hunt.py pause riyadh-lisbon
+          python hunt.py pause riyadh-porto
+          # python hunt.py flight riyadh-lisbon \
+          #   --slice RUH:LIS:2026-11-03 --slice LIS:RUH:2026-11-14 \
+          #   --target-eco 2100 --max-stops 1 \
+          #   --focus SV --focus EY --focus QR --focus EK \
+          #   --focus LH --focus KL --focus TK --focus TP
+          # python hunt.py flight riyadh-porto \
+          #   --slice RUH:OPO:2026-11-03 --slice OPO:RUH:2026-11-14 \
+          #   --target-eco 2100 --max-stops 1 \
+          #   --focus SV --focus EY --focus QR --focus EK \
+          #   --focus LH --focus KL --focus TK --focus TP
           # Hotels (StayAPI Booking.com, per market). One property, one
           # room type, Nov 4 -> 9, 2 adults. ~7 StayAPI calls per run
           # (6 markets + Google), plus a one-off hotel-id lookup.

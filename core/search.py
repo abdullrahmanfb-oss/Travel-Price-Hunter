@@ -664,7 +664,10 @@ def _detail(o):
         return {"room": o.get("room_name"), "board": o.get("board"),
                 "stars": o.get("stars"),
                 "free_cancellation": o.get("free_cancellation"),
-                "cancel_by": o.get("cancel_by")}
+                "cancel_by": o.get("cancel_by"),
+                "hotel": o.get("hotel_name"),
+                "checkin": o.get("checkin"), "checkout": o.get("checkout"),
+                "deep_link": o.get("deep_link")}
     if kind == "car":
         return {"category": o.get("category"), "seats": o.get("seats"),
                 "pickup_type": o.get("pickup_type"),
