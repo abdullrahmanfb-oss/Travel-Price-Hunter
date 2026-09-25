@@ -103,6 +103,7 @@ jobs:
           # per market (config.yaml hotels.stayapi_markets, ~7 calls) per
           # hotel watch per run. ~50 free calls on the free tier.
           STAYAPI_KEY: ${{ secrets.STAYAPI_KEY }}
+          STAYAPI_DEBUG: "1"
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
           # Nov 3 -> 14, exact dates (no flex), max 1 stop, all markets.

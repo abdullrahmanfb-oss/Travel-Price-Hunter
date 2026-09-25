@@ -34,12 +34,17 @@ def _norm(s) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
 
 
-def name_match(wanted, got) -> bool:
-    """Loose containment either way after stripping punctuation/case, so
-    'Ibis Styles Lisboa Aeroporto' matches 'ibis Styles Lisboa Aeroporto
-    Hotel' and 'Luxury Suite' matches 'Luxury Suite with Balcony'."""
+def name_match(wanted, got, either_way=False) -> bool:
+    """Containment after stripping punctuation/case: 'Luxury Suite'
+    matches 'Luxury Suite with Balcony' but NOT plain 'Suite' — the wanted
+    text must appear inside the offer's name. `either_way` also accepts the
+    offer's name inside the wanted one, for hotel names where Booking's
+    label can be the shorter form ('ibis Styles Lisboa Aeroporto' vs
+    'Ibis Styles Lisboa Aeroporto Hotel')."""
     a, b = _norm(wanted), _norm(got)
-    return bool(a and b) and (a in b or b in a)
+    if not (a and b):
+        return False
+    return a in b or (either_way and b in a)
 
 
 def apply_filters(offers, watch):
@@ -69,8 +74,8 @@ def apply_filters(offers, watch):
                 continue
             # one-property watch: a provider that only knows the city
             # (Amadeus, Google Hotels) must not leak other hotels into it
-            if watch.get("hotel") and not name_match(watch["hotel"],
-                                                     o.get("hotel_name")):
+            if watch.get("hotel") and not name_match(
+                    watch["hotel"], o.get("hotel_name"), either_way=True):
                 continue
             if watch.get("room") and not name_match(watch["room"],
                                                     o.get("room_name")):

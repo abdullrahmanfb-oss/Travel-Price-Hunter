@@ -83,6 +83,9 @@ def _get(path, params, timeout=60):
     r = requests.get(f"{_g.BASE}{path}", headers=_g._headers(),
                      params=params, timeout=timeout)
     _g._check_quota(r)
+    if r.status_code >= 400:
+        _g.debug(f"{path} {params.get('country_market') or ''} "
+                 f"HTTP {r.status_code} {_g.problem(r)}")
     return r
 
 
@@ -118,9 +121,12 @@ def resolve_hotel_id(hotel, city) -> str | None:
     r = _get(URL_TO_ID_PATH, {"url": f"{cc}/{slug}" if cc else slug},
              timeout=90)
     if r.status_code == 404:
+        _g.debug(f"url-to-id {cc}/{slug}: not found (404)")
         return None
     r.raise_for_status()
     hid = (r.json() or {}).get("hotel_id")
+    _g.debug(f"url-to-id {cc}/{slug}: hotel_id={hid} "
+             f"url={(r.json() or {}).get('url')}")
     return str(hid) if hid else None
 
 
@@ -158,6 +164,9 @@ def _search_city(req, pos):
     r.raise_for_status()
     data = (r.json() or {}).get("data") or {}
     link = data.get("search_url")
+    _g.debug(f"search dest={dest[0]} {pos} {req['checkin']}: "
+             f"{len(data.get('hotels') or [])} hotels, "
+             f"total={((data.get('pagination') or {}).get('total_results'))}")
     out = []
     for h in data.get("hotels") or []:
         o = _normalise(h, req, pos, link)
@@ -221,13 +230,20 @@ def _search_hotel(req, pos):
     r.raise_for_status()
     body = r.json() or {}
     data = body.get("data") or {}
+    hotel = data.get("hotel") or {}
+    rooms = data.get("rooms") or []
+    _g.debug(
+        f"prices hotel_id={req['hotel_id']} {pos} {req['checkin']}->"
+        f"{req['checkout']} adults={params['adults']}: "
+        f"hotel={hotel.get('name')!r} soldout={data.get('is_soldout')} "
+        f"available_rooms={data.get('available_rooms_count')} "
+        f"rooms={[(rm.get('room_name'), rm.get('total_price_value'), rm.get('currency')) for rm in rooms[:12]]}")
     if data.get("is_soldout"):
         return []
-    hotel = data.get("hotel") or {}
     name = hotel.get("name") or req.get("hotel")
     link = _hotel_link(req)
     out = []
-    for room in data.get("rooms") or []:
+    for room in rooms:
         o = _normalise_room(room, hotel, name, req, pos, link)
         if o is not None:
             out.append(o)
