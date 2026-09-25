@@ -83,3 +83,8 @@ Use it to verify any change to compare.py or digest.py.
   zero additional requests.
 - Phase 1 falls back through at most 3 date variants (nearest first)
   when the probe date is empty; phase 2 skips dates proven empty.
+- StayAPI hotels, one key, ~50 free calls: `stayapi.py` (Google Hotels)
+  has no point-of-sale parameter and answers ONLY the SA market — don't
+  fan it out. `stayapi_booking.py` (Booking.com) DOES price per market
+  via `country_market`, but only for `config.yaml hotels.stayapi_markets`
+  (SA always included); one billed call per market per watch per scan.

@@ -12,12 +12,12 @@ which other sources also saw it — agreement across sources is a signal the
 price is real rather than a stale cache entry.
 """
 from providers.flights import ignav, amadeus as am_flights, kiwi
-from providers.hotels import amadeus_hotels, ratehawk
+from providers.hotels import amadeus_hotels, ratehawk, stayapi, stayapi_booking
 from providers.cars import amadeus_cars
 
 REGISTRY = {
     "flight": [ignav, am_flights, kiwi],
-    "hotel": [amadeus_hotels, ratehawk],
+    "hotel": [amadeus_hotels, ratehawk, stayapi, stayapi_booking],
     "car": [amadeus_cars],
 }
 

@@ -99,6 +99,10 @@ jobs:
           # Amadeus app to production; otherwise the free test host is used.
           AMADEUS_HOSTNAME: ${{ secrets.AMADEUS_HOSTNAME }}
           KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
+          # StayAPI: Google Hotels (home market, 1 call) + Booking.com
+          # per market (config.yaml hotels.stayapi_markets, ~7 calls) per
+          # hotel watch per run. ~50 free calls on the free tier.
+          STAYAPI_KEY: ${{ secrets.STAYAPI_KEY }}
         run: |
           # --- watches (idempotent; add lines here to track more flights) ---
           # Nov 3 -> 14, exact dates (no flex), max 1 stop, all markets.
@@ -117,6 +121,10 @@ jobs:
             --target-eco 2100 --max-stops 1 \
             --focus SV --focus EY --focus QR --focus EK \
             --focus LH --focus KL --focus TK --focus TP
+          # Hotels (StayAPI / Amadeus): uncomment and edit to track one.
+          # --city takes an IATA city code (LIS) or a plain name (Lisbon).
+          # python hunt.py hotel lisbon-nov --city LIS \
+          #   --checkin 2026-11-03 --checkout 2026-11-14 --adults 2 --target 4000
 
           echo "::group::Active providers"
           python hunt.py providers
