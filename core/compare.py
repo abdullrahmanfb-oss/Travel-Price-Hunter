@@ -30,6 +30,18 @@ def to_sar(amount, currency, rates):
     return round(amount * rates[currency], 2)
 
 
+def _norm(s) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+def name_match(wanted, got) -> bool:
+    """Loose containment either way after stripping punctuation/case, so
+    'Ibis Styles Lisboa Aeroporto' matches 'ibis Styles Lisboa Aeroporto
+    Hotel' and 'Luxury Suite' matches 'Luxury Suite with Balcony'."""
+    a, b = _norm(wanted), _norm(got)
+    return bool(a and b) and (a in b or b in a)
+
+
 def apply_filters(offers, watch):
     product = watch["product"]
     out = []
@@ -55,6 +67,14 @@ def apply_filters(offers, watch):
                 continue
             if watch.get("refundable_only") and not o.get("free_cancellation"):
                 continue
+            # one-property watch: a provider that only knows the city
+            # (Amadeus, Google Hotels) must not leak other hotels into it
+            if watch.get("hotel") and not name_match(watch["hotel"],
+                                                     o.get("hotel_name")):
+                continue
+            if watch.get("room") and not name_match(watch["room"],
+                                                    o.get("room_name")):
+                continue
         out.append(o)
     return out
 
@@ -70,7 +90,9 @@ def flag_offer(offer):
             flags.append("non-refundable, non-changeable")
     if not offer.get("bookable"):
         flags.append(f'price-discovery only — book via {offer["provider"]} link')
-    return flags
+    # rank() runs more than once per scan (probe pass, then the merged
+    # pass), so the same flag must not stack up on the offer
+    return list(dict.fromkeys(flags))
 
 
 def rank(offers, rates):

@@ -111,7 +111,9 @@ def _build_req(watch, pos, variant, slice_set):
         base.update(city=watch["city"], checkin=watch["checkin"],
                     checkout=watch["checkout"], rooms=watch.get("rooms", 1),
                     residency=pos["code"].lower(),
-                    refundable_only=watch.get("refundable_only"))
+                    refundable_only=watch.get("refundable_only"),
+                    hotel=watch.get("hotel"), room=watch.get("room"),
+                    hotel_id=watch.get("hotel_id"))
     else:
         base.update(pickup_location=watch["pickup_location"],
                     pickup_at=watch["pickup_at"],
@@ -172,6 +174,30 @@ def _one(watch, provider, pos, variant, slice_set, route):
     return res
 
 
+def _resolve_hotel(watch, providers):
+    """A one-property hotel watch needs Booking's numeric id before any
+    market can be priced. Resolve it once (5-12 s, one billed call) and
+    store it on the watch; later scans skip straight to pricing."""
+    if watch.get("product") != "hotel" or not watch.get("hotel") \
+            or watch.get("hotel_id"):
+        return watch
+    prov = next((p for p in providers
+                 if getattr(p, "resolve_hotel_id", None)), None)
+    if prov is None:
+        return watch
+    try:
+        hid = prov.resolve_hotel_id(watch["hotel"], watch["city"])
+    except Exception as e:
+        ERRORS[f"{prov.NAME}: hotel lookup {_reason(e)}"] += 1
+        return watch
+    if not hid:
+        ERRORS[f'{prov.NAME}: hotel "{watch["hotel"]}" not found on '
+               f'Booking.com - pass --hotel-id'] += 1
+        return watch
+    db.set_hotel_id(watch["id"], hid)
+    return dict(watch, hotel_id=str(hid))
+
+
 def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
     tune = (cfg or {}).get("search", {})
     deep_margin = tune.get("deep_margin", DEEP_MARGIN)
@@ -186,6 +212,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
     providers = registry.active(product)
     if not providers:
         return []
+    watch = _resolve_hotel(watch, providers)
 
     variant_list = watches.variants(watch)
     date_variants = watches.expand(watch)
@@ -297,8 +324,11 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         _attach_link(best, providers)
         best["detail"] = _detail(best)
 
-        # market edge vs the home market
-        sa_ref = min((o["sar_est"] for o in merged
+        # market edge vs the home market. Taken from the pre-merge list:
+        # merge() keeps one row per product across markets, so when the
+        # same room (or flight) is cheaper abroad the SA quote for it is
+        # folded into the winner and would vanish from `merged`.
+        sa_ref = min((o["sar_est"] for o in ranked
                       if o["pos"]["code"] == "SA"), default=None)
         edge = round((sa_ref - best["sar_est"]) / sa_ref * 100, 1) \
             if sa_ref else 0.0
@@ -317,7 +347,7 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
         # dashboard's Saudi-gap view stays live even on routes where the
         # home market never produces the best price.
         if sa_ref is not None and best["pos"]["code"] != "SA":
-            sa_offer = min((o for o in merged
+            sa_offer = min((o for o in ranked
                             if o["pos"]["code"] == "SA"),
                            key=lambda x: x["sar_est"])
             db.record(watch["id"], product, variant, sa_offer)

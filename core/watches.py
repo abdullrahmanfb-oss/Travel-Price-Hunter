@@ -105,7 +105,12 @@ def _thin(variants):
 
 def route_key(watch) -> str:
     if watch["product"] == "hotel":
-        return f'HOTEL-{watch["city"]}'
+        key = f'HOTEL-{watch["city"]}'
+        if watch.get("hotel"):
+            # a one-property watch has its own winners; don't share market
+            # stats with the city-wide watch
+            key += "+" + "-".join(str(watch["hotel"]).lower().split())
+        return key
     if watch["product"] == "car":
         return f'CAR-{watch["pickup_location"]}'
     sl = watch["slices"]
@@ -137,7 +142,10 @@ def trip_type(slices) -> str:
 
 def describe(watch) -> str:
     if watch["product"] == "hotel":
-        return f'{watch["city"]} {watch["checkin"]}→{watch["checkout"]}'
+        what = watch.get("hotel") or watch["city"]
+        if watch.get("hotel") and watch.get("room"):
+            what += f' · {watch["room"]}'
+        return f'{what} {watch["checkin"]}→{watch["checkout"]}'
     if watch["product"] == "car":
         return f'{watch["pickup_location"]} {watch["pickup_at"][:10]}'
     sl = watch["slices"]

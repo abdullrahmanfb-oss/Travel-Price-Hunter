@@ -67,7 +67,10 @@ Use it to verify any change to compare.py or digest.py.
 - Saudi gap: offers beating the SA price by `alerts.market_edge_pct`
   (config.yaml) get `⚑ CHEAPER ABROAD` in digest + dashboard. Scans record
   an SA reference sample when SA doesn't win — without it the dashboard
-  gap goes blind on routes SA never wins. `db.latest` returns the
+  gap goes blind on routes SA never wins. The SA reference is taken from
+  the pre-merge `ranked` list: `registry.merge` keeps ONE row per product
+  across markets, so the SA quote for a room that is cheaper abroad is
+  folded into the winner and is not in `merged`. `db.latest` returns the
   cheapest row of the latest day, NOT the newest row, because of those
   reference samples; `db.market_wins` likewise counts only daily lows.
 - `warm_markets` NEVER prunes SA — the gap view needs an SA quote every
@@ -88,3 +91,8 @@ Use it to verify any change to compare.py or digest.py.
   fan it out. `stayapi_booking.py` (Booking.com) DOES price per market
   via `country_market`, but only for `config.yaml hotels.stayapi_markets`
   (SA always included); one billed call per market per watch per scan.
+- Hotel watches with `--hotel` track ONE property (`/booking/hotel/prices`,
+  every room type) instead of the city. The Booking id is resolved once
+  from the name slug (`search._resolve_hotel`, 5-12 s, billed) and stored
+  in `watches.hotel_id`; `--room` is a substring filter in `apply_filters`,
+  which also stops city-only providers leaking other hotels into the watch.

@@ -52,6 +52,22 @@ CITY_NAMES = {
 }
 
 
+# Booking.com hotel URLs are /hotel/{cc}/{slug}.html — the country code
+# comes from the watch's city.
+CITY_COUNTRY = {
+    "LIS": "pt", "OPO": "pt", "RUH": "sa", "JED": "sa", "DMM": "sa",
+    "DXB": "ae", "AUH": "ae", "DOH": "qa", "LON": "gb", "LHR": "gb",
+    "EDI": "gb", "PAR": "fr", "CDG": "fr", "IST": "tr", "BKK": "th",
+    "HKT": "th", "KUL": "my", "SIN": "sg", "DPS": "id", "ALA": "kz",
+    "MOW": "ru", "SVO": "ru", "PVG": "cn", "SHA": "cn", "MAD": "es",
+    "BCN": "es", "ROM": "it", "FCO": "it", "MIL": "it", "AMS": "nl",
+    "FRA": "de", "MUC": "de", "VIE": "at", "ATH": "gr", "CAI": "eg",
+    "AMM": "jo", "TYO": "jp", "NRT": "jp", "SEL": "kr", "ICN": "kr",
+    "NYC": "us", "JFK": "us", "LAX": "us", "MLE": "mv", "CMB": "lk",
+    "BOM": "in", "DEL": "in", "MNL": "ph", "SGN": "vn",
+}
+
+
 def available() -> bool:
     return bool(os.environ.get("STAYAPI_KEY"))
 
@@ -102,6 +118,10 @@ def search(req: dict) -> list[dict]:
     """
     # Home market only — see the module docstring for why.
     if (req.get("pos_code") or countries.HOME).upper() != countries.HOME:
+        return []
+    # A one-property watch is priced by the Booking.com provider; a city
+    # search here would spend a call on 20 hotels that all get filtered.
+    if req.get("hotel"):
         return []
 
     params = {
