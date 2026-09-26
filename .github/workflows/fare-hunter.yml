@@ -129,13 +129,16 @@ jobs:
           #   --target-eco 2100 --max-stops 1 \
           #   --focus SV --focus EY --focus QR --focus EK \
           #   --focus LH --focus KL --focus TK --focus TP
-          # Hotels (StayAPI Booking.com, per market). One property, one
-          # room type, Nov 4 -> 9, 2 adults. ~7 StayAPI calls per run
-          # (6 markets + Google), plus a one-off hotel-id lookup.
-          # For "cheapest hotel in the city" drop --hotel/--room.
+          # Hotels (StayAPI Booking.com, per market). One property, any
+          # room, Nov 4 -> 9, 2 adults: 6 StayAPI calls per run. The
+          # Booking id is passed so no lookup call is spent (run #117
+          # resolved it). Booking's room names here are "Standard Room",
+          # "Superior Twin Room", "Premium Room with Terrace." — add
+          # --room "<one of those>" to track a single type. For
+          # "cheapest hotel in the city" drop --hotel/--hotel-id.
           python hunt.py hotel ibis-lisboa-airport --city LIS \
             --checkin 2026-11-04 --checkout 2026-11-09 --adults 2 \
-            --hotel "Ibis Styles Lisboa Aeroporto" --room "Luxury Suite"
+            --hotel "Ibis Styles Lisboa Aeroporto" --hotel-id 12063509
 
           echo "::group::Active providers"
           python hunt.py providers
