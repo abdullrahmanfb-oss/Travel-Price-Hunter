@@ -151,6 +151,12 @@ def _one(watch, provider, pos, variant, slice_set, route):
     if getattr(provider, "exhausted", None) and provider.exhausted():
         ERRORS[f"{provider.NAME}: skipped, key exhausted"] += 1
         return []
+    # A provider that declares its markets won't call out for the others
+    # — don't spend a rate-limiter slot on a call that never happens
+    # (28 markets x 2/min each turned a 7-call hotel scan into 2 minutes).
+    only = getattr(provider, "MARKETS", None)
+    if only is not None and pos["code"] not in only:
+        return []
     LIMITER.wait()
     try:
         res = provider.search(_build_req(watch, pos, variant, slice_set))
@@ -247,7 +253,15 @@ def run_watch(watch, all_pos, rates, cfg=None) -> list[dict]:
                         for pr in providers for pos in warm]
                 for f in as_completed(futs):
                     p1 += f.result()
+            n_raw = len(p1)
             p1 = compare.rank(compare.apply_filters(p1, watch), rates)
+            if n_raw and not p1:
+                # the providers DID answer; the watch's own filters
+                # (hotel/room name, stars, refundable, stops, airlines)
+                # threw everything away — say so instead of "no results"
+                ERRORS[f"{watch['id']}: all {n_raw} offers dropped by "
+                       f"watch filters (room/hotel/stars/refundable/"
+                       f"stops/airline) or FX"] += 1
             if p1:
                 probe = candidate
                 break

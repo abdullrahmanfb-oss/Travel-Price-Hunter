@@ -16,6 +16,7 @@ the month's allowance in two days.
 Env: STAYAPI_KEY   Docs: https://stayapi.com/docs/endpoints/google-hotels/search
 """
 import os
+import sys
 from datetime import date
 from urllib.parse import quote_plus
 
@@ -98,6 +99,28 @@ def _headers():
             "Accept": "application/json"}
 
 
+# Markets this provider will actually call out for; search._one skips the
+# rate-limiter wait (and the call) for any other market.
+MARKETS = {countries.HOME}
+
+
+def debug(msg):
+    """STAYAPI_DEBUG=1: one line per HTTP call in the scan log (the
+    sandbox can't reach StayAPI, so the CI log is the only way to see
+    what the API really returned). Mirrors IGNAV_DEBUG."""
+    if os.environ.get("STAYAPI_DEBUG"):
+        print(f"[stayapi] {msg}", file=sys.stderr, flush=True)
+
+
+def problem(r) -> str:
+    """Short text for a non-2xx Problem-Details body."""
+    try:
+        d = r.json() or {}
+        return f"{d.get('error_code') or d.get('title')}: {d.get('detail')}"
+    except ValueError:
+        return (r.text or "")[:200]
+
+
 def location_name(city) -> str:
     code = (city or "").strip().upper()
     return CITY_NAMES.get(code) or code.title()
@@ -134,9 +157,15 @@ def search(req: dict) -> list[dict]:
     r = requests.get(f"{BASE}{SEARCH_PATH}", headers=_headers(),
                      params=params, timeout=60)
     _check_quota(r)
+    if r.status_code >= 400:
+        debug(f"google search {params['location']} HTTP {r.status_code} "
+              f"{problem(r)}")
     r.raise_for_status()
     data = r.json() or {}
     hotels = data.get("hotels") or []
+    debug(f"google search {params['location']} {params['check_in']}: "
+          f"HTTP {r.status_code}, {len(hotels)} hotels, "
+          f"total_count={data.get('total_count')}")
     out = []
     for h in hotels:
         o = _normalise(h, req, data.get("location") or params["location"])
